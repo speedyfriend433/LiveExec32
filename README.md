@@ -24,9 +24,9 @@ rm ramdisk.dmg 058-75249-062.dmg
 ```
 - Replace all of `/var/mobile/Documents/TrollExperiments` with your paths
 - Compile this project using theos
-- Launch a binary and profit. Please note that chroot is required otherwise you will hit bad memory access errors. I'm investigating it and will provide a fix.
+- Launch a binary and profit. Please note that chroot is internally done otherwise you will hit bad memory access errors. I'm investigating it and will provide a fix.
 ```bash
-sudo chroot /var/mobile/ramdisk32 .theos/out/LiveExec32 /var/mobile/ramdisk32/usr/bin/fdisk
+sudo .theos/out/LiveExec32 /var/mobile/ramdisk32/usr/bin/fdisk
 ```
 
 ## Design
