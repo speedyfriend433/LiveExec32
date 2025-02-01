@@ -8,10 +8,10 @@ This project is heavily based on [unidbg](https://github.com/zhkl0228/unidbg).
 There are also missing syscalls that I have yet to provide to pass through. Please see [ARM32SyscallHandler.java](https://github.com/zhkl0228/unidbg/blob/master/unidbg-ios/src/main/java/com/github/unidbg/ios/ARM32SyscallHandler.java) and [DarwinSyscallHandler.java](https://github.com/zhkl0228/unidbg/blob/master/unidbg-ios/src/main/java/com/github/unidbg/ios/DarwinSyscallHandler.java) to implement them properly.
 
 ## Usage
-- Download and extract a ramdisk image using pzb. For example, I chose the last 32-bit iPhone (armv7s) on the latest iOS 10.3.3:
+- Download and extract a ramdisk image using pzb and xpwn. For example, I chose the last 32-bit iPhone (armv7s) on the latest iOS 10.3.3:
 ```bash
 pzb -g 058-75249-062.dmg http://appldnld.apple.com/ios10.3.3/091-23384-20170719-CA966D80-6977-11E7-9F96-3E9100BA0AE3/iPhone_4.0_32bit_10.3.3_14G60_Restore.ipsw
-img4tool -e -o ramdisk.dmg 058-75249-062.dmg
+xpwntool 058-75249-062.dmg ramdisk.dmg -k
 ```
 - Mount the dmg and copy its contents
 ```bash
