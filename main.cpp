@@ -30,7 +30,6 @@
 #define DEFAULT_DYLD_PATH DEFAULT_ROOT_PATH "/usr/lib/dyld"
 
 extern "C" {
-t_dynarmic handle;
 
 u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
   int fd = open(path, O_RDONLY);
@@ -44,7 +43,7 @@ u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
   guestMappings[guestMappingLen].hostAddr = map;
 
   // Map mach_header first
-  //u32 addr = Dynarmic_direct_mmap(handle, target, 0x1000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, map, 0);
+  //u32 addr = Dynarmic_direct_mmap(target, 0x1000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, map, 0);
 
   guestMappings[guestMappingLen].name = strdup(basename((char *)path));
 
@@ -72,11 +71,11 @@ u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
       printf("Mapping 0x%lx-0x%lx to 0x%x\n", map + seg->fileoff, map + seg->fileoff + seg->vmsize, target + seg->vmaddr);
       u32 mappedAddr = 0;
       if(filesize > 0) {
-        mappedAddr = Dynarmic_direct_mmap(handle, target + seg->vmaddr, filesize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, (void *)(map + seg->fileoff), 0);
+        mappedAddr = Dynarmic_direct_mmap(target + seg->vmaddr, filesize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, (void *)(map + seg->fileoff), 0);
         assert(mappedAddr != -1);
       }
 
-      u32 vmMappedAddr = Dynarmic_mmap(handle, target + seg->vmaddr + filesize, seg->vmsize - filesize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+      u32 vmMappedAddr = Dynarmic_mmap(target + seg->vmaddr + filesize, seg->vmsize - filesize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       if(filesize == 0) {
         mappedAddr = vmMappedAddr;
       }
@@ -90,12 +89,12 @@ u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
       arm_thread_state_t *state = (arm_thread_state_t *)((uint64_t)tc + sizeof(uint32_t)*4);
       state->__pc += target;
       for (int i = 0; i < 13; i++) {
-        handle->jit32->Regs()[i] = state->__r[i];
+        threadHandle.jit->Regs()[i] = state->__r[i];
       }
-      handle->jit32->Regs()[13] = state->__sp;
-      handle->jit32->Regs()[14] = state->__lr;
-      handle->jit32->Regs()[15] = state->__pc;
-      handle->jit32->SetCpsr(state->__cpsr);
+      threadHandle.jit->Regs()[13] = state->__sp;
+      threadHandle.jit->Regs()[14] = state->__lr;
+      threadHandle.jit->Regs()[15] = state->__pc;
+      threadHandle.jit->SetCpsr(state->__cpsr);
     }
   }
   u32 addr = guestMappings[guestMappingLen].start;
@@ -112,7 +111,7 @@ u32 prependString(u32& address, const char* fmt, ...) {
   va_end(args);
 
   address -= len + 1;
-  Dynarmic_mem_1write(handle, address, len, buffer);
+  Dynarmic_mem_1write(address, len, buffer);
   return address;
 }
 
@@ -122,7 +121,7 @@ int main(int argc, char* argv[], char* envp[]) {
     return 1;
   }
 
-  handle = Dynarmic_nativeInitialize();
+  Dynarmic_nativeInitialize();
 
   const char *execPath = argv[1];
   u32 execAddr = Dynarmic_map_file(false, 0x20000000, execPath);
@@ -131,7 +130,7 @@ int main(int argc, char* argv[], char* envp[]) {
   const char *dyldPath = getenv("DYLD_PATH");
   printf("Loading dyld at DYLD_PATH %s\n", dyldPath);
   Dynarmic_map_file(true, 0x10000000, dyldPath);
-  printf("entry point: 0x%x\n", handle->jit32->Regs()[15]);
+  printf("entry point: 0x%x\n", threadHandle.jit->Regs()[15]);
 
   setenv("ROOT_PATH", DEFAULT_ROOT_PATH, 0);
   const char *rootPath = getenv("ROOT_PATH");
@@ -140,32 +139,33 @@ int main(int argc, char* argv[], char* envp[]) {
     chroot(rootPath);
     chdir("/");
   } else {
-    //handle->fs->addMountpoint("/rootfs", rootPath);
-    handle->fs->addMountpoint("/", rootPath);
+    //sharedHandle.fs->addMountpoint("/rootfs", rootPath);
+    sharedHandle.fs->addMountpoint("/", rootPath);
+    sharedHandle.fs->addMountpoint("/dev", "/dev");
   }
 
   // commpage 0xffff4000+0x1000
-  u32 commpage = Dynarmic_mmap(handle, 0xffff4000, 0x1000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-  handle->ucb->MemoryWrite16(commpage + 0x1E, 3); // version
-  handle->ucb->MemoryWrite32(commpage + 0x20, 0x9000);
-  handle->ucb->MemoryWrite8(commpage + 0x22, 1); // number of CPUs
-  handle->ucb->MemoryWrite8(commpage + 0x24, DYN_PAGE_BITS); // 32-bit page shift
-  handle->ucb->MemoryWrite16(commpage + 0x26, 128); // cache line size, 32? 64?
-  //handle->ucb->MemoryWrite32(commpage + 0x28, 128); // sched count
-  handle->ucb->MemoryWrite8(commpage + 0x34, 1); // active CPU
-  handle->ucb->MemoryWrite8(commpage + 0x35, 1); // physical CPU
-  handle->ucb->MemoryWrite8(commpage + 0x36, 1); // logical CPU
-  handle->ucb->MemoryWrite8(commpage + 0x37, DYN_PAGE_BITS); // kernel page shift
-  handle->ucb->MemoryWrite32(commpage + 0x38, 0x40000000u); // max memory size, 1GB
+  u32 commpage = Dynarmic_mmap(0xffff4000, 0x1000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+  sharedHandle.ucb->MemoryWrite16(commpage + 0x1E, 3); // version
+  sharedHandle.ucb->MemoryWrite32(commpage + 0x20, 0x9000);
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x22, 1); // number of CPUs
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x24, DYN_PAGE_BITS); // 32-bit page shift
+  sharedHandle.ucb->MemoryWrite16(commpage + 0x26, 128); // cache line size, 32? 64?
+  //sharedHandle.ucb->MemoryWrite32(commpage + 0x28, 128); // sched count
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x34, 1); // active CPU
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x35, 1); // physical CPU
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x36, 1); // logical CPU
+  sharedHandle.ucb->MemoryWrite8(commpage + 0x37, DYN_PAGE_BITS); // kernel page shift
+  sharedHandle.ucb->MemoryWrite32(commpage + 0x38, 0x40000000u); // max memory size, 1GB
   // TODO: mach time stuff
-  //handle->ucb->MemoryWrite64(commpage + 0x40, 0x4141414141414141); // FIXME
-  //handle->ucb->MemoryWrite64(commpage + 0x80, 0x41414141); // FIXME
-  handle->ucb->MemoryWrite64(commpage + 0x84, 1); // dev firmware
+  //sharedHandle.ucb->MemoryWrite64(commpage + 0x40, 0x4141414141414141); // FIXME
+  //sharedHandle.ucb->MemoryWrite64(commpage + 0x80, 0x41414141); // FIXME
+  sharedHandle.ucb->MemoryWrite64(commpage + 0x84, 1); // dev firmware
   
   // allocate stack guards and stack buffer for dyld
-  u32 dyldStackGuardStart = Dynarmic_mmap(handle, 0x80000000, 0x1000, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  u32 dyldStack = Dynarmic_mmap(handle, 0x80000000, 0xff000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  Dynarmic_mmap(handle, 0x80000000, 0x1000, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  u32 dyldStackGuardStart = Dynarmic_mmap(0x80000000, 0x1000, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  u32 dyldStack = Dynarmic_mmap(0x80000000, 0xff000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  Dynarmic_mmap(0x80000000, 0x1000, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   u32 dyldStackPtr = dyldStack - 0x1000 + 0x100000;
 
@@ -215,27 +215,26 @@ int main(int argc, char* argv[], char* envp[]) {
 
   // write apple
   for (int i = 0; i < sizeof(guest_apple)/sizeof(u32); i++) {
-    handle->ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_apple[i]);
+    sharedHandle.ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_apple[i]);
   }
 
   // write envp
   for (int i = 0; i < sizeof(guest_envp)/sizeof(u32); i++) {
-    handle->ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_envp[i]);
+    sharedHandle.ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_envp[i]);
   }
 
   // write argv and argc
   for (int i = argc; i >= 0; i--) {
-    handle->ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_argv[i]);
+    sharedHandle.ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), guest_argv[i]);
   }
 
   // write main executable base
-  handle->ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), execAddr);
+  sharedHandle.ucb->MemoryWrite32(dyldStackPtr -= sizeof(u32), execAddr);
 
   printf("stack ptr now 0x%x\n", dyldStackPtr);
 
-  Dynarmic_reg_1write(handle, 13, dyldStackPtr);
-  Dynarmic_emu_1start(handle, handle->jit32->Regs()[15]);
-  Dynarmic_nativeDestroy(handle);
+  Dynarmic_reg_1write(13, dyldStackPtr);
+  Dynarmic_emu_1start(threadHandle.jit->Regs()[15]);
 }
 
 }

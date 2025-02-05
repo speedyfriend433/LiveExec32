@@ -1,0 +1,1 @@
+void libxpc_initializer() {}

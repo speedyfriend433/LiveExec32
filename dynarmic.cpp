@@ -18,6 +18,7 @@
 #include <mach-o/dyld_images.h>
 
 #include <dirent.h>
+#include <dlfcn.h>
 #include <signal.h>
 #include <sys/attr.h>
 #include <sys/errno.h>
@@ -28,12 +29,14 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/xattr.h>
 #include <libgen.h>
 #include "mach_private.h"
 #include "codesign.h"
 #include "dynarmic.h"
 #include "32bit.h"
+
 
 #define IGNORE_BAD_MEM_ACCESS 0
 #define TRACE_RW 0
@@ -42,6 +45,9 @@
 //#define TRACE_ALLOC 0
 //#define fprintf(...)
 //#define printf(...)
+
+#define CS_OPS_STATUS 0
+#define CS_ENFORCEMENT 0x00001000
 
 #define msgh_request_port	msgh_remote_port
 #define msgh_reply_port		msgh_local_port
@@ -55,13 +61,13 @@ struct symbolicated_call {
 
 extern "C"
 int return_with_carry(int result, bool carry) {
-    handle->cpsr->setCarry(carry);
+    threadHandle.cpsr->setCarry(carry);
     return carry ? errno : result;
 }
 
 extern "C"
 int return_with_carry_direct(int result, bool carry) {
-    handle->cpsr->setCarry(carry);
+    threadHandle.cpsr->setCarry(carry);
     return result;
 }
 
@@ -83,12 +89,14 @@ LcarryClear: \n \
 ");
 
 // guest syscalls
-// TODO: for path, read until it hits null terminator to avoid read overflow.
-// AND provide a direct fastpath in case read boundary does not exceed page size
 int guest_csops(pid_t pid, unsigned int ops, u32 guest_useraddr, size_t usersize) {
     char *host_useraddr = (char *)malloc(usersize);
     int result = syscallRetCarry(SYS_csops, pid, ops, host_useraddr, usersize, 0,0,0);
-    Dynarmic_mem_1write(handle, guest_useraddr, usersize, host_useraddr);
+    if(ops == CS_OPS_STATUS) {
+        // remove code signature enforcement
+        *(uint32_t *)host_useraddr &= ~CS_ENFORCEMENT;
+    }
+    Dynarmic_mem_1write(guest_useraddr, usersize, host_useraddr);
     free(host_useraddr);
     return result;
 }
@@ -96,16 +104,16 @@ int guest_csops(pid_t pid, unsigned int ops, u32 guest_useraddr, size_t usersize
 int guest_getrlimit(int resource, u32 guest_rlp) {
     struct rlimit host_rlp;
     int result = syscallRetCarry(SYS_getrlimit, resource, &host_rlp, 0,0,0,0,0);
-    Dynarmic_mem_1write(handle, guest_rlp, sizeof(host_rlp), (char *)&host_rlp);
+    Dynarmic_mem_1write(guest_rlp, sizeof(host_rlp), (char *)&host_rlp);
     return result;
 }
 
 
 u32 guest_mmap(u32 guest_addr, size_t len, int prot, int flags, int fildes, off_t offset) {
     len = ALIGN_DYN_SIZE(len);
-    u32 result = Dynarmic_mmap(handle, guest_addr, len, prot, flags, fildes, offset);
+    u32 result = Dynarmic_mmap(guest_addr, len, prot, flags, fildes, offset);
     if(result == -1) {
-        handle->cpsr->setCarry(true);
+        threadHandle.cpsr->setCarry(true);
         return errno;
     }
     return result;
@@ -115,7 +123,7 @@ int guest___sysctl(u32 guest_name, u_int namelen, u32 guest_oldp, u32 guest_oldl
     // TODO: fake stuff like CPU architecture and KERN_USRSTACK32
     int host_name[0x10];
     assert(namelen < sizeof(host_name));
-    Dynarmic_mem_1read(handle, guest_name, sizeof(int) * namelen, (char *)host_name);
+    Dynarmic_mem_1read(guest_name, sizeof(int) * namelen, (char *)host_name);
 
     // Guess nothing is larger than 1kb
     size_t host_oldlenp;
@@ -123,7 +131,7 @@ int guest___sysctl(u32 guest_name, u_int namelen, u32 guest_oldp, u32 guest_oldl
     char host_newp[0x400];
     assert(newlen <= sizeof(host_newp));
     if(guest_newp) {
-        Dynarmic_mem_1read(handle, guest_newp, newlen, host_newp);
+        Dynarmic_mem_1read(guest_newp, newlen, host_newp);
     }
 
     int result = syscallRetCarry(SYS_sysctl,
@@ -135,8 +143,8 @@ int guest___sysctl(u32 guest_name, u_int namelen, u32 guest_oldp, u32 guest_oldl
     );
 
     if(guest_oldp) {
-        Dynarmic_mem_1write(handle, guest_oldp, host_oldlenp, host_oldp);
-        handle->ucb->MemoryWrite32(guest_oldlenp, host_oldlenp);
+        Dynarmic_mem_1write(guest_oldp, host_oldlenp, host_oldp);
+        sharedHandle.ucb->MemoryWrite32(guest_oldlenp, host_oldlenp);
     }
     return result;
 }
@@ -145,7 +153,7 @@ int guest___sysctlbyname(u32 guest_name, u_int namelen, u32 guest_oldp, u32 gues
     // TODO: fake stuff like CPU architecture and KERN_USRSTACK32
     char host_name[0x100];
     assert(namelen < sizeof(host_name));
-    Dynarmic_mem_1read(handle, guest_name, namelen, (char *)host_name);
+    Dynarmic_mem_1read(guest_name, namelen, (char *)host_name);
 
     // Guess nothing is larger than 1kb
     size_t host_oldlenp;
@@ -153,7 +161,7 @@ int guest___sysctlbyname(u32 guest_name, u_int namelen, u32 guest_oldp, u32 gues
     char host_newp[0x400];
     assert(newlen <= sizeof(host_newp));
     if(guest_newp) {
-        Dynarmic_mem_1read(handle, guest_newp, newlen, host_newp);
+        Dynarmic_mem_1read(guest_newp, newlen, host_newp);
     }
 
     int result = syscallRetCarry(SYS_sysctlbyname,
@@ -165,20 +173,20 @@ int guest___sysctlbyname(u32 guest_name, u_int namelen, u32 guest_oldp, u32 gues
     );
 
     if(guest_oldp) {
-        Dynarmic_mem_1write(handle, guest_oldp, host_oldlenp, host_oldp);
-        handle->ucb->MemoryWrite32(guest_oldlenp, host_oldlenp);
+        Dynarmic_mem_1write(guest_oldp, host_oldlenp, host_oldp);
+        sharedHandle.ucb->MemoryWrite32(guest_oldlenp, host_oldlenp);
     }
     return result;
 }
 
 int guest_getattrlist(u32 guest_path, u32 guest_attrList, u32 guest_attrBuf, size_t attrBufSize, unsigned long options) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     struct attrlist host_attrList;
-    Dynarmic_mem_1read(handle, guest_attrList, sizeof(struct attrlist), (char *)&host_attrList);
+    Dynarmic_mem_1read(guest_attrList, sizeof(struct attrlist), (char *)&host_attrList);
     char *host_attrBuf = (char *)malloc(attrBufSize);
     int result = syscallRetCarry(SYS_getattrlist, host_path, &host_attrList, host_attrBuf, attrBufSize, options, 0,0);
-    Dynarmic_mem_1write(handle, guest_attrBuf, attrBufSize, host_attrBuf);
+    Dynarmic_mem_1write(guest_attrBuf, attrBufSize, host_attrBuf);
     free(host_attrBuf);
     return result;
 }
@@ -186,8 +194,8 @@ int guest_getattrlist(u32 guest_path, u32 guest_attrList, u32 guest_attrBuf, siz
 int	 guest_pthread_getugid_np(u32 uid, u32 gid) {
     uid_t host_uid, host_gid;
     int result = pthread_getugid_np(&host_uid, &host_gid);
-    handle->ucb->MemoryWrite32(uid, host_uid);
-    handle->ucb->MemoryWrite32(gid, host_gid);
+    sharedHandle.ucb->MemoryWrite32(uid, host_uid);
+    sharedHandle.ucb->MemoryWrite32(gid, host_gid);
     return result;
 }
 
@@ -209,7 +217,7 @@ guest_mach_msg_trap(u32 guest_msg,
     mach_msg_return_t result = MACH_MSG_SUCCESS;
 
     char *host_msg = (char *)malloc(MAX(send_size, rcv_size));
-    Dynarmic_mem_1read(handle, guest_msg, send_size, host_msg);
+    Dynarmic_mem_1read(guest_msg, send_size, host_msg);
 
     mach_msg_header_t *host_header = (mach_msg_header_t *)host_msg;
     printf("LC32: mach_msg_trap id %d\n", host_header->msgh_id);
@@ -229,7 +237,7 @@ guest_mach_msg_trap(u32 guest_msg,
                 Mess->Out.RetCode = result;
             } else {
                 printf("LC32: Unhandled flavor %d\n", Mess->In.flavor);
-                handle->ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
+                sharedHandle.ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
             }
             break;
         }
@@ -293,7 +301,7 @@ guest_mach_msg_trap(u32 guest_msg,
         }
         default:
             printf("LC32: Unhandled msgh_id\n");
-            handle->ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
+            sharedHandle.ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
             break;
     }
 
@@ -301,18 +309,18 @@ guest_mach_msg_trap(u32 guest_msg,
     host_header->msgh_request_port = 0;
     host_header->msgh_id += 100; // reply Id always equals reqId+100
 
-    Dynarmic_mem_1write(handle, guest_msg, rcv_size, host_msg);
+    Dynarmic_mem_1write(guest_msg, rcv_size, host_msg);
     free(host_msg);
     return result;
 }
 
 int guest_getdirentries64(int fd, u32 guest_buf, int nbytes, u32 guest_basep) {
     char *host_buf = (char *)malloc(nbytes);
-    __darwin_off_t host_basep = (__darwin_off_t)handle->ucb->MemoryRead32(guest_basep); // is reading needed?
+    __darwin_off_t host_basep = (__darwin_off_t)sharedHandle.ucb->MemoryRead32(guest_basep); // is reading needed?
     // FIXME: is this correct?
     int result = syscallRetCarry(SYS_getdirentries64, fd, host_buf, nbytes, &host_basep, 0,0,0);
-    Dynarmic_mem_1write(handle, guest_buf, nbytes, host_buf);
-    handle->ucb->MemoryWrite64(guest_basep, host_basep);
+    Dynarmic_mem_1write(guest_buf, nbytes, host_buf);
+    sharedHandle.ucb->MemoryWrite64(guest_basep, host_basep);
     free(host_buf);
     return result;
 }
@@ -348,13 +356,13 @@ void guest_stat_copy(struct stat *host_buf, struct stat_32 *host_buf_32) {
 
 int guest_stat64(u32 guest_path, u32 guest_buf) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     struct stat host_buf;
     struct stat_32 host_buf_32;
     int result = stat(host_path, &host_buf);
     if(result == 0) {
         guest_stat_copy(&host_buf, &host_buf_32);
-        Dynarmic_mem_1write(handle, guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
+        Dynarmic_mem_1write(guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
     }
     return return_with_carry(result, result != 0);
 }
@@ -365,7 +373,7 @@ int guest_fstat(int fildes, u32 guest_buf) {
     int result = fstat(fildes, &host_buf);
     if(result == 0) {
         guest_stat_copy(&host_buf, &host_buf_32);
-        Dynarmic_mem_1write(handle, guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
+        Dynarmic_mem_1write(guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
     }
     return return_with_carry(result, result != 0);
 }
@@ -374,22 +382,22 @@ int guest_lstat(u32 guest_path, u32 guest_buf) {
     struct stat host_buf;
     struct stat_32 host_buf_32;
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     int result = lstat(host_path, &host_buf);
     if(result == 0) {
         guest_stat_copy(&host_buf, &host_buf_32);
-        Dynarmic_mem_1write(handle, guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
+        Dynarmic_mem_1write(guest_buf, sizeof(struct stat_32), (char *)&host_buf_32);
     }
     return return_with_carry(result, result != 0);
 }
 
 int guest_statfs64(u32 guest_path, u32 guest_buf) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     struct statfs host_buf;
     int result = syscallRetCarry(SYS_statfs, host_path, &host_buf, 0,0,0,0,0);
     if(result == 0) {
-        Dynarmic_mem_1write(handle, guest_buf, sizeof(struct statfs), (char *)&host_buf);
+        Dynarmic_mem_1write(guest_buf, sizeof(struct statfs), (char *)&host_buf);
     }
     return result;
 }
@@ -398,7 +406,7 @@ int guest_fstatfs64(int fildes, u32 guest_buf) {
     struct statfs host_buf;
     int result = syscallRetCarry(SYS_fstatfs, fildes, &host_buf, 0,0,0,0,0);
     if(result == 0) {
-        Dynarmic_mem_1write(handle, guest_buf, sizeof(struct statfs), (char *)&host_buf);
+        Dynarmic_mem_1write(guest_buf, sizeof(struct statfs), (char *)&host_buf);
     }
     return result;
 }
@@ -414,7 +422,7 @@ int guest_bsdthread_register(u32 guest_func_thread_start, u32 guest_func_start_w
 int guest_sandbox_ms(u32 guest_policyname, int call, u32 guest_arg) {
     // TODO: ???
     char host_policyname[0x20];
-    Dynarmic_mem_1read(handle, guest_policyname, sizeof(host_policyname), host_policyname);
+    Dynarmic_mem_1read(guest_policyname, sizeof(host_policyname), host_policyname);
     printf("sandbox(%s, %d)\n", host_policyname, call);
     return 0;
 }
@@ -422,40 +430,58 @@ int guest_sandbox_ms(u32 guest_policyname, int call, u32 guest_arg) {
 int guest_getentropy(u32 guest_buffer, u32 length) {
     char *host_buffer = (char *)malloc(length);
     int result = syscallRetCarry(SYS_getentropy, (void *)host_buffer, length, 0,0,0,0,0);
-    Dynarmic_mem_1write(handle, guest_buffer, length, host_buffer);
+    Dynarmic_mem_1write(guest_buffer, length, host_buffer);
     free(host_buffer);
     return result;
 }
 
 int guest_connect(int socket, u32 guest_address, socklen_t address_len) {
-    char *host_address = (char *)malloc(address_len);
-    Dynarmic_mem_1read(handle, guest_address, address_len, host_address);
-    int result = syscallRetCarry(SYS_connect, socket, (const sockaddr *)host_address, address_len, 0,0,0,0);
-    free(host_address);
-    return result;
+    // See https://developer.apple.com/forums/thread/756756?answerId=790507022#790507022
+    // sockaddr_un.sun_path has an artificial limit is 104 bytes, however it allows up to 253 bytes
+    if(address_len > SOCK_MAXADDRLEN) {
+        return return_with_carry_direct(EINVAL, true);
+    }
+    char host_address[SOCK_MAXADDRLEN];
+    Dynarmic_mem_1read(guest_address, address_len, host_address);
+
+    int type;
+    socklen_t length = sizeof(int);
+    getsockopt(socket, SOL_SOCKET, SO_TYPE, &type, &length);
+    if(type == SOCK_DGRAM) {
+        char host_path[PATH_MAX];
+        sockaddr_un *sock = (sockaddr_un *)host_address;
+        sharedHandle.fs->pathGuestToHost(sock->sun_path, host_path);
+        if(strlen(host_path) > SOCK_MAXADDRLEN - offsetof(sockaddr_un, sun_path)) {
+            return return_with_carry_direct(EINVAL, true);
+        }
+        strcpy(sock->sun_path, host_path);
+        address_len = SUN_LEN(sock);
+    }
+
+    return syscallRetCarry(SYS_connect, socket, (const sockaddr *)host_address, address_len, 0,0,0,0);
 }
 
 int guest_gettimeofday(u32 guest_tp, u32 guest_tzp) {
     // tzp is always null since it's no longer used
-    assert(!guest_tzp);
+    //assert(!guest_tzp);
     struct timeval host_tp;
     int result = syscallRetCarry(SYS_gettimeofday, &host_tp, NULL, 0,0,0,0,0);
-    Dynarmic_mem_1write(handle, guest_tp, sizeof(host_tp), (char *)&host_tp);
+    Dynarmic_mem_1write(guest_tp, sizeof(host_tp), (char *)&host_tp);
     return result;
 }
 
 int guest_rename(u32 guest_old, u32 guest_new) {
     char host_old[PATH_MAX], host_new[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_old, host_old);
-    handle->fs->pathGuestToHost(guest_new, host_new);
+    sharedHandle.fs->pathGuestToHost(guest_old, host_old);
+    sharedHandle.fs->pathGuestToHost(guest_new, host_new);
     return syscallRetCarry(SYS_rename, host_old, host_new, 0,0,0,0,0);
 }
 
 ssize_t guest_sendto(int socket, const u32 guest_buffer, size_t length, int flags, u32 guest_dest_addr, socklen_t dest_len) {
     char *host_buffer = (char *)malloc(length);
     char *host_dest_addr = (char *)malloc(dest_len);
-    Dynarmic_mem_1read(handle, guest_buffer, length, host_buffer);
-    Dynarmic_mem_1read(handle, guest_dest_addr, dest_len, host_dest_addr);
+    Dynarmic_mem_1read(guest_buffer, length, host_buffer);
+    Dynarmic_mem_1read(guest_dest_addr, dest_len, host_dest_addr);
     int result = syscallRetCarry(SYS_sendto, socket, host_buffer, length, flags, (const sockaddr *)host_dest_addr, dest_len, 0);
     free(host_buffer);
     free(host_dest_addr);
@@ -465,7 +491,7 @@ ssize_t guest_sendto(int socket, const u32 guest_buffer, size_t length, int flag
 ssize_t guest_pread(int NR, int fildes, u32 guest_buf, size_t nbyte, off_t offset) {
     char *host_buf = (char *)malloc(nbyte);
     ssize_t result = syscallRetCarry(NR, fildes, host_buf, nbyte, offset, 0,0,0);
-    Dynarmic_mem_1write(handle, guest_buf, nbyte, host_buf);
+    Dynarmic_mem_1write(guest_buf, nbyte, host_buf);
     free(host_buf);
     return result;
 }
@@ -473,14 +499,14 @@ ssize_t guest_pread(int NR, int fildes, u32 guest_buf, size_t nbyte, off_t offse
 ssize_t guest_read(int NR, int fildes, u32 guest_buf, size_t nbyte) {
     char *host_buf = (char *)malloc(nbyte);
     ssize_t result = syscallRetCarry(NR, fildes, host_buf, nbyte, 0,0,0,0);
-    Dynarmic_mem_1write(handle, guest_buf, nbyte, host_buf);
+    Dynarmic_mem_1write(guest_buf, nbyte, host_buf);
     free(host_buf);
     return result;
 }
 
 ssize_t guest_write(int NR, int fildes, u32 guest_buf, size_t nbyte) {
     char *host_buf = (char *)malloc(nbyte);
-    Dynarmic_mem_1read(handle, guest_buf, nbyte, host_buf);
+    Dynarmic_mem_1read(guest_buf, nbyte, host_buf);
     ssize_t result = syscallRetCarry(NR, fildes, host_buf, nbyte, 0,0,0,0);
     free(host_buf);
     return result;
@@ -489,7 +515,7 @@ ssize_t guest_write(int NR, int fildes, u32 guest_buf, size_t nbyte) {
 ssize_t guest_writev(int NR, int fildes, u32 guest_iov, int iovcnt) {
     size_t iovsize = sizeof(iovec_32) * iovcnt;
     iovec_32 *host_iov = (iovec_32 *)malloc(iovsize);
-    Dynarmic_mem_1read(handle, guest_iov, iovsize, (char *)host_iov);
+    Dynarmic_mem_1read(guest_iov, iovsize, (char *)host_iov);
     ssize_t result = 0;
     for (int i = 0; i < iovcnt; i++) {
         result += guest_write(NR == SYS_writev ? SYS_write : SYS_write_nocancel, fildes, host_iov[i].guest_iov_base, host_iov[i].iov_len);
@@ -500,42 +526,42 @@ ssize_t guest_writev(int NR, int fildes, u32 guest_iov, int iovcnt) {
 
 int guest_open(int NR, u32 guest_path, int oflag, int mode) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     int result = syscallRetCarry(NR, host_path, oflag, mode, 0,0,0,0);
     return result;
 }
 
 int guest_unlink(u32 guest_path) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     return syscallRetCarry(SYS_unlink, host_path, 0,0,0,0,0,0);
 }
 
 int guest_access(u32 guest_path, int mode) {
     char host_path[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_path, host_path);
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     return syscallRetCarry(SYS_access, host_path, mode, 0,0,0,0,0);
 }
 
 int guest_sigaction(int sig, u32 guest_act, u32 guest_oact) {
     static sigaction_32 host_actions[SIGUSR2 + 1];
     if (guest_oact) {
-        Dynarmic_mem_1write(handle, guest_oact, sizeof(sigaction_32), (char *)&host_actions[sig]);
+        Dynarmic_mem_1write(guest_oact, sizeof(sigaction_32), (char *)&host_actions[sig]);
     }
     if (guest_act) {
         printf("LC32: sigaction: 0x%08x -> ", host_actions[sig]._sa_handler);
-        Dynarmic_mem_1read(handle, guest_act, sizeof(sigaction_32), (char *)&host_actions[sig]);
+        Dynarmic_mem_1read(guest_act, sizeof(sigaction_32), (char *)&host_actions[sig]);
         printf("LC32: 0x%08x\n", host_actions[sig]._sa_handler);
     }
     return 0;
 }
 
 int guest_sigprocmask(int how, u32 guest_set, u32 guest_oldset) {
-    sigset_t host_set = guest_set ? handle->ucb->MemoryRead32(guest_set) : 0;
+    sigset_t host_set = guest_set ? sharedHandle.ucb->MemoryRead32(guest_set) : 0;
     sigset_t host_oldset = 0;
     int result = syscallRetCarry(SYS_sigprocmask, how, guest_set ? &host_set : NULL, &host_oldset, 0,0,0,0);
     if (guest_oldset) {
-        handle->ucb->MemoryWrite32(guest_oldset, host_oldset);
+        sharedHandle.ucb->MemoryWrite32(guest_oldset, host_oldset);
     }
     return result;
 }
@@ -555,20 +581,20 @@ int guest_ioctl(int fildes, u32 request, u32 guest_r2) {
     case FIODTYPE:
         int host_r2;
         int result = syscallRetCarry(SYS_ioctl, fildes, request, &host_r2, 0,0,0,0);
-        handle->ucb->MemoryWrite32(guest_r2, host_r2);
+        sharedHandle.ucb->MemoryWrite32(guest_r2, host_r2);
         return result;
     }
     printf("Unhandled ioctl request: %d (0x%x)\n", request, request);
-    handle->ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
+    sharedHandle.ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
     return -1;
 }
 
 int guest_pthread_sigmask(int how, u32 guest_set, u32 guest_oldset) {
-    sigset_t host_set = guest_set ? handle->ucb->MemoryRead32(guest_set) : 0;
+    sigset_t host_set = guest_set ? sharedHandle.ucb->MemoryRead32(guest_set) : 0;
     sigset_t host_oldset = 0;
     int result = pthread_sigmask(how, guest_set ? &host_set : NULL, &host_oldset);
     if (guest_oldset) {
-        handle->ucb->MemoryWrite32(guest_oldset, host_oldset);
+        sharedHandle.ucb->MemoryWrite32(guest_oldset, host_oldset);
     }
     // FIXME: does it need carry bit upon error?
     return result;
@@ -576,28 +602,28 @@ int guest_pthread_sigmask(int how, u32 guest_set, u32 guest_oldset) {
 
 ssize_t guest_readlink(u32 guest_pathname, u32 guest_buf, size_t bufsiz) {
     char host_pathname[PATH_MAX];
-    handle->fs->pathGuestToHost(guest_pathname, host_pathname);
+    sharedHandle.fs->pathGuestToHost(guest_pathname, host_pathname);
     char *host_buf = (char *)malloc(bufsiz);
     int result = syscallRetCarry(SYS_readlink, host_pathname, host_buf, bufsiz, 0,0,0,0);
-    handle->fs->pathHostToGuest(host_buf, guest_buf);
-    Dynarmic_mem_1write(handle, guest_buf, bufsiz, host_buf);
+    sharedHandle.fs->pathHostToGuest(host_buf, guest_buf);
+    Dynarmic_mem_1write(guest_buf, bufsiz, host_buf);
     free(host_buf);
     return result;
 }
 
 int guest_munmap(u32 guest_addr, size_t len) {
-    int result = Dynarmic_munmap(handle, guest_addr, len);
+    int result = Dynarmic_munmap(guest_addr, len);
     if(result == -1) {
-        handle->cpsr->setCarry(true);
+        threadHandle.cpsr->setCarry(true);
         return errno;
     }
     return result;
 }
 
 int guest_mprotect(u32 guest_addr, size_t len, int prot) {
-    int result = Dynarmic_mprotect(handle, guest_addr, len, prot);
+    int result = Dynarmic_mprotect(guest_addr, len, prot);
     if(result == -1) {
-        handle->cpsr->setCarry(true);
+        threadHandle.cpsr->setCarry(true);
         return errno;
     }
     return result;
@@ -619,7 +645,7 @@ int guest_fcntl(int fildes, int cmd, u32 guest_r2) {
             return syscallRetCarry(SYS_fcntl, fildes, cmd, guest_r2, 0,0,0,0);
         case F_ADDFILESIGS_RETURN:
             // fsig->fs_file_start = 0xFFFFFFFF;
-            handle->ucb->MemoryWrite32(guest_r2, 0xFFFFFFFF);
+            sharedHandle.ucb->MemoryWrite32(guest_r2, 0xFFFFFFFF);
             return 0;
         case F_CHECK_LV:
             return 0;
@@ -627,21 +653,21 @@ int guest_fcntl(int fildes, int cmd, u32 guest_r2) {
         case F_GETPATH: {
             char host_r2[PATH_MAX];
             int result = syscallRetCarry(SYS_fcntl, fildes, cmd, host_r2, 0,0,0,0);
-            handle->fs->pathHostToGuest(host_r2, guest_r2);
+            sharedHandle.fs->pathHostToGuest(host_r2, guest_r2);
             return result;
         }
         case F_PREALLOCATE: {
             fstore_t host_r2;
-            Dynarmic_mem_1read(handle, guest_r2, sizeof(fstore_t), (char *)&host_r2);
+            Dynarmic_mem_1read(guest_r2, sizeof(fstore_t), (char *)&host_r2);
             return syscallRetCarry(SYS_fcntl, fildes, cmd, &host_r2, 0,0,0,0);
         }
         case F_SETSIZE: {
-            off_t host_r2 = handle->ucb->MemoryRead64(guest_r2);
+            off_t host_r2 = sharedHandle.ucb->MemoryRead64(guest_r2);
             return syscallRetCarry(SYS_fcntl, fildes, cmd, &host_r2);
         }
         case F_RDADVISE: {
             struct radvisory host_r2;
-            Dynarmic_mem_1read(handle, guest_r2, sizeof(struct radvisory), (char *)&host_r2);
+            Dynarmic_mem_1read(guest_r2, sizeof(struct radvisory), (char *)&host_r2);
             return syscallRetCarry(SYS_fcntl, fildes, cmd, &host_r2, 0,0,0,0);
         }
         //case F_READBOOTSTRAP:
@@ -649,14 +675,14 @@ int guest_fcntl(int fildes, int cmd, u32 guest_r2) {
 
         case F_LOG2PHYS: {
             struct log2phys host_r2;
-            Dynarmic_mem_1read(handle, guest_r2, sizeof(struct log2phys), (char *)&host_r2);
+            Dynarmic_mem_1read(guest_r2, sizeof(struct log2phys), (char *)&host_r2);
             int result = syscallRetCarry(SYS_fcntl, fildes, cmd, &host_r2, 0,0,0,0);
-            Dynarmic_mem_1write(handle, guest_r2, sizeof(struct log2phys), (char *)&host_r2);
+            Dynarmic_mem_1write(guest_r2, sizeof(struct log2phys), (char *)&host_r2);
             return result;
         }
         default:
             printf("Unhandled fcntl command: %d\n", cmd);
-            handle->ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
+            sharedHandle.ucb->ExceptionRaised(0xDEADDEAD, Dynarmic::A32::Exception::Yield);
             return syscallRetCarry(SYS_fcntl, fildes, cmd, guest_r2, 0,0,0,0);
     }
 }
@@ -665,7 +691,7 @@ int guest_proc_info(int callnum, int pid, int flavor, uint64_t arg, u32 guest_bu
     // FIXME: check buffer size
     char *host_buffer = (char *)malloc(buffersize);
     int result = syscallRetCarry(SYS_proc_info, callnum, pid, flavor, arg, host_buffer, buffersize, 0);
-    Dynarmic_mem_1write(handle, guest_buffer, buffersize, host_buffer);
+    Dynarmic_mem_1write(guest_buffer, buffersize, host_buffer);
     free(host_buffer);
     return result;
 }
@@ -673,17 +699,17 @@ int guest_proc_info(int callnum, int pid, int flavor, uint64_t arg, u32 guest_bu
 int guest_mach_timebase_info(u32 guest_info) {
     struct mach_timebase_info host_info;
     int result = mach_timebase_info(&host_info);
-    Dynarmic_mem_1write(handle, guest_info, sizeof(host_info), (char *)&host_info);
+    Dynarmic_mem_1write(guest_info, sizeof(host_info), (char *)&host_info);
     return result;
 }
 
 kern_return_t guest_host_create_mach_voucher_trap(mach_port_name_t host, u32 guest_recipes, int recipes_size, u32 guest_voucher) {
     // array of bytes
     mach_voucher_attr_raw_recipe_array_t host_recipes = (mach_voucher_attr_raw_recipe_array_t)malloc(recipes_size);
-    Dynarmic_mem_1read(handle, guest_recipes, recipes_size, (char *)host_recipes);
+    Dynarmic_mem_1read(guest_recipes, recipes_size, (char *)host_recipes);
     mach_port_name_t host_voucher;
     kern_return_t result = host_create_mach_voucher_trap(host, host_recipes, recipes_size, &host_voucher);
-    handle->ucb->MemoryWrite32(guest_voucher, host_voucher);
+    sharedHandle.ucb->MemoryWrite32(guest_voucher, host_voucher);
     return result;
 }
 
@@ -697,9 +723,9 @@ kern_return_t guest__kernelrpc_mach_vm_allocate_trap(u32 target, u32 guest_addre
     bool anywhere = (flags & VM_FLAGS_ANYWHERE) != 0;
     if (anywhere) {
         // Sometimes the address pointer will contain garbage value, change it to 0
-        handle->ucb->MemoryWrite32(guest_address, 0);
+        sharedHandle.ucb->MemoryWrite32(guest_address, 0);
     }
-    u32 result = Dynarmic_mmap(handle, handle->ucb->MemoryRead32(guest_address), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | (anywhere ? 0 : MAP_FIXED), -1, 0);
+    u32 result = Dynarmic_mmap(sharedHandle.ucb->MemoryRead32(guest_address), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | (anywhere ? 0 : MAP_FIXED), -1, 0);
     if (result == -1) {
 /*
         if (!anywhere && tag != VM_MEMORY_REALLOC) {
@@ -709,16 +735,16 @@ kern_return_t guest__kernelrpc_mach_vm_allocate_trap(u32 target, u32 guest_addre
 */
         return KERN_NO_SPACE;
     }
-    handle->ucb->MemoryWrite32(guest_address, result);
+    sharedHandle.ucb->MemoryWrite32(guest_address, result);
     return KERN_SUCCESS;
 }
 
 kern_return_t guest__kernelrpc_mach_port_construct_trap(mach_port_name_t target, u32 guest_options, u64 context, u32 guest_name) {
     mach_port_options_t host_options;
     mach_port_name_t host_name;
-    Dynarmic_mem_1read(handle, guest_options, sizeof(host_options), (char *)&host_options);
+    Dynarmic_mem_1read(guest_options, sizeof(host_options), (char *)&host_options);
     kern_return_t result = _kernelrpc_mach_port_construct_trap(target, &host_options, context, &host_name);
-    handle->ucb->MemoryWrite32(guest_name, host_name);
+    sharedHandle.ucb->MemoryWrite32(guest_name, host_name);
     return result;
 }
 
@@ -732,11 +758,11 @@ kern_return_t guest__kernelrpc_mach_vm_map_trap(mach_port_name_t target, u32 gue
         printf("LC32: BackendException: _kernelrpc_mach_vm_map_trap fixed\n");
         return KERN_FAILURE;
     }
-    u32 result = Dynarmic_mmap(handle, handle->ucb->MemoryRead32(guest_address), size, cur_protection, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mask ?: DYN_PAGE_MASK);
+    u32 result = Dynarmic_mmap(sharedHandle.ucb->MemoryRead32(guest_address), size, cur_protection, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mask ?: DYN_PAGE_MASK);
     if (result == -1) {
         return KERN_NO_SPACE;
     }
-    handle->ucb->MemoryWrite32(guest_address, result);
+    sharedHandle.ucb->MemoryWrite32(guest_address, result);
     return KERN_SUCCESS;
 }
 
@@ -744,13 +770,12 @@ kern_return_t guest__kernelrpc_mach_vm_deallocate_trap(u32 target, vm_address_t 
     if (target != mach_task_self()) {
         return KERN_FAILURE;
     }
-    return Dynarmic_munmap(handle, address, size) == 0 ? KERN_SUCCESS : KERN_FAILURE;
+    return Dynarmic_munmap(address, size) == 0 ? KERN_SUCCESS : KERN_FAILURE;
 }
 
 int guest_abort_with_payload(u32 reason_namespace, u64 reason_code, u32 guest_payload, u32 payload_size, u32 guest_reason_string, u64 reason_flags) {
-    char host_reason_string[0x1000];
-    Dynarmic_mem_1read(handle, guest_reason_string, sizeof(host_reason_string), host_reason_string);
-    printf("abort_with_payload called with namespace=0x%x, code=0x%llx, reason=%s\n", reason_namespace, reason_code, host_reason_string);
+    DynarmicHostString host_reason_string(guest_reason_string);
+    printf("abort_with_payload called with namespace=0x%x, code=0x%llx, reason=%s\n", reason_namespace, reason_code, host_reason_string.hostPtr);
     return 0;
 }
 
@@ -767,10 +792,10 @@ static void load_symbols_for_image(guest_file_mapping *mapping, void(^iterator)(
   if (crash_info) {
     crash_info += slide;
     crashreporter_annotations_t host_gCRAnnotations;
-    Dynarmic_mem_1read(handle, crash_info, sizeof(crashreporter_annotations_t), (char *)&host_gCRAnnotations);
+    Dynarmic_mem_1read(crash_info, sizeof(crashreporter_annotations_t), (char *)&host_gCRAnnotations);
     if (host_gCRAnnotations.message) {
       char message[0x1000];
-      Dynarmic_mem_1read(handle, host_gCRAnnotations.message, sizeof(message), message);
+      Dynarmic_mem_1read(host_gCRAnnotations.message, sizeof(message), message);
       printf("Crash message from %s: %s\n", mapping->name, message);
     } else if (host_gCRAnnotations.message2) {
       printf("gCRAnnotations has message2 but unhandled. Crashing to raise attention\n");
@@ -835,58 +860,12 @@ inline void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_page_tabl
     return page ? &page[vaddr & DYN_PAGE_MASK] : NULL;
 }
 
-
-
-class DynarmicString {
-public:
-    ~DynarmicString() {
-        if(!direct) {
-            free(hostPtr);
-        }
-    }
-
-    DynarmicString(u32 guestPtr) : guestPtr{guestPtr} {
-         char *dest = (char *)get_memory(handle->memory, guestPtr, handle->num_page_table_entries, handle->page_table);
-         if(!dest) {
-             abort();
-         }
-
-         size_t totalLen = strlen(dest);
-         u32 pageOff = guestPtr & DYN_PAGE_MASK;
-         direct = pageOff + totalLen < DYN_PAGE_SIZE;
-         if(direct) {
-             hostPtr = dest;
-         } else {
-             totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
-             for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
-                 char *page = get_memory_page(handle->memory, vaddr, handle->num_page_table_entries, handle->page_table);
-                 if(!page) {
-                     abort();
-                 }
-                 size_t len = strlen(page);
-                 totalLen += len;
-                 if(len < DYN_PAGE_SIZE) {
-                     break;
-                 }
-             }
-             hostPtr = (char *)malloc(totalLen + 1);
-             hostPtr[totalLen] = '\0';
-             Dynarmic_mem_1read(handle, guestPtr, totalLen, hostPtr);
-        }
-    }
-
-    bool direct;
-    u32 guestPtr;
-    char *hostPtr;
-};
-
 class DynarmicCallbacks32 final : public Dynarmic::A32::UserCallbacks {
 private:
     ~DynarmicCallbacks32() = default;
 
 public:
     void destroy() {
-        printf("########### DynarmicCallbacks32 is being destroyed\n");
         this->cp15 = nullptr;
         delete this;
     }
@@ -1145,7 +1124,7 @@ public:
         printf(" r4 0x%08x  r5 0x%08x  r6 0x%08x  r7 0x%08x\n", cpu->Regs()[4], cpu->Regs()[5], cpu->Regs()[6], cpu->Regs()[7]);
         printf(" r8 0x%08x  r9 0x%08x r10 0x%08x r11 0x%08x\n", cpu->Regs()[8], cpu->Regs()[9], cpu->Regs()[10], cpu->Regs()[11]);
         printf("r12 0x%08x  sp 0x%08x  lr 0x%08x  pc 0x%08x\n", cpu->Regs()[12], cpu->Regs()[13], cpu->Regs()[14], cpu->Regs()[15]);
-        printf("CPSR: 0x%08x thumb(%d) N(%d) Z(%d) C(%d) V(%d)\n", cpu->Cpsr(), handle->cpsr->isThumb(), handle->cpsr->isNegative(), handle->cpsr->isZero(), handle->cpsr->hasCarry(), handle->cpsr->isOverflow());
+        printf("CPSR: 0x%08x thumb(%d) N(%d) Z(%d) C(%d) V(%d)\n", cpu->Cpsr(), threadHandle.cpsr->isThumb(), threadHandle.cpsr->isNegative(), threadHandle.cpsr->isZero(), threadHandle.cpsr->hasCarry(), threadHandle.cpsr->isOverflow());
 
         u32 pc = cpu->Regs()[15];
         u32 lr = cpu->Regs()[14];
@@ -1467,7 +1446,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             case 489: //mremap_encrypted
                 printf("LC32: attempted to load encrypted binaries?\n");
-                cpu->Regs()[0] = return_with_carry_direct(EPERM, true);
+                cpu->Regs()[0] = 0; //return_with_carry_direct(EPERM, true);
                 break;
             case 500:
                 cpu->Regs()[0] = guest_getentropy(cpu->Regs()[0], cpu->Regs()[1]);
@@ -1481,6 +1460,72 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 if(handleMachineDependentSyscall(NR)) {
                     break;
                 }
+            case 1001: { // LC32Dlsym
+                u64 result = LC32Dlsym(cpu->Regs()[0]);
+                cpu->Regs()[0] = (u32)result;
+                cpu->Regs()[1] = (u32)(result >> 32);
+                break;
+            }
+            case 1002: { // LC32InvokeHostCRet32
+                if(cpu->IsExecuting()) {
+                    // Get out of the callback first, since host may call other guest functions
+                    cpu->HaltExecution(LC32HaltReasonSVC);
+                    return;
+                }
+                typedef u32(*HostCall)(u32, u32, u32);
+                HostCall hostCall = (HostCall)((u64)cpu->Regs()[0] | ((u64)cpu->Regs()[1] << 32));
+                cpu->Regs()[0] = hostCall(cpu->Regs()[2], cpu->Regs()[3], cpu->Regs()[ARM_REG_SP]);
+                break;
+            }
+            case 1003: { // LC32GuestToHostCString
+                DynarmicHostString host_pointer(cpu->Regs()[0]);
+                u64 result = (u64)host_pointer.hostPtrForGuest();
+                cpu->Regs()[0] = (u32)result;
+                cpu->Regs()[1] = (u32)(result >> 32);
+                break;
+            }
+            case 1004: { // LC32GuestToHostCStringFree
+                u64 pointer = cpu->Regs()[0] | ((u64)cpu->Regs()[1] << 32);
+                if(pointer & DynarmicHostString_NEED_FREE) {
+                    free((void *)((u64)pointer & ~DynarmicHostString_NEED_FREE));
+                }
+                break;
+            }
+            case 1005: { // LC32GetHostSelector
+                u64 result = LC32GetHostSelector(cpu->Regs()[0]);
+                cpu->Regs()[0] = (u32)result;
+                cpu->Regs()[1] = (u32)(result >> 32);
+                break;
+            }
+            case 1006: { // LC32InvokeHostSelector
+                if(cpu->IsExecuting()) {
+                    // Get out of the callback first, since host may call other guest functions
+                    cpu->HaltExecution(LC32HaltReasonSVC);
+                    return;
+                }
+                u64 host_self = (u64)cpu->Regs()[0] | ((u64)cpu->Regs()[1] << 32);
+                u64 host_cmd = (u64)cpu->Regs()[2] | ((u64)cpu->Regs()[3] << 32);
+                u64 result = LC32InvokeHostSelector(host_self, host_cmd, cpu->Regs()[ARM_REG_SP]);
+                cpu->Regs()[0] = (u32)result;
+                cpu->Regs()[1] = (u32)(result >> 32);
+                break;
+            }
+            case 1007: { // LC32GetHostObject
+                u64 result = LC32GetHostObject(cpu->Regs()[0], cpu->Regs()[1]);
+                cpu->Regs()[0] = (u32)result;
+                cpu->Regs()[1] = (u32)(result >> 32);
+                break;
+            }
+            case 1008: { // LC32HostToGuestCopyString
+                u64 host_object = (u64)cpu->Regs()[2] | ((u64)cpu->Regs()[3] << 32);
+                cpu->Regs()[0] = LC32HostToGuestCopyClassName(cpu->Regs()[0], cpu->Regs()[1], host_object);
+                break;
+            }
+            case 1009:
+                assert(cpu->IsExecuting());
+                // We're returning from guest call
+                cpu->HaltExecution(LC32HaltReasonRetFromGuest);
+                return;
             default:
                 printf("Unhandled svc number: %d\n", NR);
                 DumpCrashReport();
@@ -1536,34 +1581,28 @@ extern "C" {
  * Method:    nativeInitialize
  * Signature: (Z)J
  */
-t_dynarmic Dynarmic_nativeInitialize() {
-  t_dynarmic dynarmic = (t_dynarmic) calloc(1, sizeof(struct dynarmic));
-  if(dynarmic == NULL) {
-    fprintf(stderr, "calloc dynarmic failed: size=%lu\n", sizeof(struct dynarmic));
-    abort();
-    return 0;
-  }
-  dynarmic->memory = kh_init(memory);
-  if(dynarmic->memory == NULL) {
+bool Dynarmic_nativeInitialize() {
+  sharedHandle.memory = kh_init(memory);
+  if(sharedHandle.memory == NULL) {
     fprintf(stderr, "kh_init memory failed\n");
     abort();
     return 0;
   }
-  int ret = kh_resize(memory, dynarmic->memory, 0x1000);
+  int ret = kh_resize(memory, sharedHandle.memory, 0x1000);
   if(ret == -1) {
     fprintf(stderr, "kh_resize memory failed\n");
     abort();
     return 0;
   }
-  dynarmic->monitor = new Dynarmic::ExclusiveMonitor(1);
+  sharedHandle.monitor = new Dynarmic::ExclusiveMonitor(1);
   {
-    DynarmicCallbacks32 *callbacks = new DynarmicCallbacks32(dynarmic->memory);
+    DynarmicCallbacks32 *callbacks = new DynarmicCallbacks32(sharedHandle.memory);
 
     Dynarmic::A32::UserConfig config;
     config.callbacks = callbacks;
     config.coprocessors[15] = callbacks->cp15;
     config.processor_id = 0;
-    config.global_monitor = dynarmic->monitor;
+    config.global_monitor = sharedHandle.monitor;
     config.always_little_endian = false;
     config.wall_clock_cntpct = true;
 //    config.page_table_pointer_mask_bits = DYN_PAGE_BITS;
@@ -1572,38 +1611,38 @@ t_dynarmic Dynarmic_nativeInitialize() {
 //    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
 //    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
 
-    dynarmic->num_page_table_entries = Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES;
-    size_t size = dynarmic->num_page_table_entries * sizeof(void*);
-    dynarmic->page_table = (void **)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if(dynarmic->page_table == MAP_FAILED) {
+    sharedHandle.num_page_table_entries = Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES;
+    size_t size = sharedHandle.num_page_table_entries * sizeof(void*);
+    sharedHandle.page_table = (void **)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if(sharedHandle.page_table == MAP_FAILED) {
       fprintf(stderr, "nativeInitialize mmap failed[%s->%s:%d] size=0x%zx, errno=%d, msg=%s\n", __FILE__, __func__, __LINE__, size, errno, strerror(errno));
-      dynarmic->page_table = NULL;
+      sharedHandle.page_table = NULL;
     } else {
-      callbacks->num_page_table_entries = dynarmic->num_page_table_entries;
-      callbacks->page_table = dynarmic->page_table;
+      callbacks->num_page_table_entries = sharedHandle.num_page_table_entries;
+      callbacks->page_table = sharedHandle.page_table;
 
       // Unpredictable instructions
       config.define_unpredictable_behaviour = true;
 
       // Memory
-      config.page_table = reinterpret_cast<std::array<std::uint8_t*, Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES>*>(dynarmic->page_table);
+      config.page_table = reinterpret_cast<std::array<std::uint8_t*, Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES>*>(sharedHandle.page_table);
       config.absolute_offset_page_table = false;
       config.detect_misaligned_access_via_page_table = 16 | 32 | 64 | 128;
       config.only_detect_misalignment_via_page_table_on_page_boundary = true;
     }
 
-    dynarmic->cb32 = callbacks;
-    dynarmic->jit32 = new Dynarmic::A32::Jit(config);
-    dynarmic->cpsr = new DynarmicCpsr(dynarmic->jit32);
-    dynarmic->fs = new LC32Filesystem();
-    callbacks->cpu = dynarmic->jit32;
-    callbacks->cpsr = dynarmic->cpsr;
+    sharedHandle.cb = callbacks;
+    threadHandle.jit = new Dynarmic::A32::Jit(config);
+    threadHandle.cpsr = new DynarmicCpsr(threadHandle.jit);
+    sharedHandle.fs = new LC32Filesystem();
+    callbacks->cpu = threadHandle.jit;
+    callbacks->cpsr = threadHandle.cpsr;
   }
-  return dynarmic;
+  return true;
 }
 
-void Dynarmic_nativeDestroy(t_dynarmic dynarmic) {
-  khash_t(memory) *memory = dynarmic->memory;
+void Dynarmic_nativeDestroy() {
+  khash_t(memory) *memory = sharedHandle.memory;
   for (khiter_t k = kh_begin(memory); k < kh_end(memory); k++) {
     if(kh_exist(memory, k)) {
       t_memory_page page = kh_value(memory, k);
@@ -1615,27 +1654,27 @@ void Dynarmic_nativeDestroy(t_dynarmic dynarmic) {
     }
   }
   kh_destroy(memory, memory);
-  Dynarmic::A32::Jit *jit32 = dynarmic->jit32;
-  if(jit32) {
-    jit32->ClearCache();
-    jit32->Reset();
-    delete jit32;
+  Dynarmic::A32::Jit *jit = threadHandle.jit;
+  if(jit) {
+    jit->ClearCache();
+    jit->Reset();
+    delete jit;
   }
-  DynarmicCallbacks32 *cb32 = dynarmic->cb32;
-  if(cb32) {
-    cb32->destroy();
+  DynarmicCallbacks32 *cb = sharedHandle.cb;
+  if(cb) {
+    cb->destroy();
   }
-  if(dynarmic->page_table) {
-    int ret = munmap(dynarmic->page_table, dynarmic->num_page_table_entries * sizeof(void*));
+  if(sharedHandle.page_table) {
+    int ret = munmap(sharedHandle.page_table, sharedHandle.num_page_table_entries * sizeof(void*));
     if(ret != 0) {
-      fprintf(stderr, "munmap failed[%s->%s:%d]: page_table=%p, ret=%d\n", __FILE__, __func__, __LINE__, dynarmic->page_table, ret);
+      fprintf(stderr, "munmap failed[%s->%s:%d]: page_table=%p, ret=%d\n", __FILE__, __func__, __LINE__, sharedHandle.page_table, ret);
     }
   }
-  delete dynarmic->monitor;
-  free(dynarmic);
+  delete sharedHandle.monitor;
 }
 
-int Dynarmic_munmap(t_dynarmic dynarmic, u64 address, u64 size) {
+// FIXME: unmapping 1/4 of 16k page will unmap other 3/4 pages
+int Dynarmic_munmap(u64 address, u64 size) {
   if(address & DYN_PAGE_MASK) {
     errno = EINVAL;
     return -1;
@@ -1644,7 +1683,7 @@ int Dynarmic_munmap(t_dynarmic dynarmic, u64 address, u64 size) {
     errno = EINVAL;
     return -1;
   }
-  khash_t(memory) *memory = dynarmic->memory;
+  khash_t(memory) *memory = sharedHandle.memory;
   for(u64 vaddr = address; vaddr < address + size; vaddr += DYN_PAGE_SIZE) {
     u64 idx = vaddr >> DYN_PAGE_BITS;
     khiter_t k = kh_get(memory, memory, vaddr);
@@ -1653,8 +1692,8 @@ int Dynarmic_munmap(t_dynarmic dynarmic, u64 address, u64 size) {
       errno = ENOMEM;
       return -1;
     }
-    if(dynarmic->page_table && idx < dynarmic->num_page_table_entries) {
-      dynarmic->page_table[idx] = NULL;
+    if(sharedHandle.page_table && idx < sharedHandle.num_page_table_entries) {
+      sharedHandle.page_table[idx] = NULL;
     }
     t_memory_page page = kh_value(memory, k);
     int ret = munmap(page->addr, DYN_PAGE_SIZE);
@@ -1667,7 +1706,7 @@ int Dynarmic_munmap(t_dynarmic dynarmic, u64 address, u64 size) {
   return 0;
 }
 
-u64 Dynarmic_mem_reserve(t_dynarmic dynarmic, u64 address, u64 size, bool fixed, u64 mask) {
+u64 Dynarmic_mem_reserve(u64 address, u64 size, bool fixed, u64 mask) {
   static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_lock(&mutex);
 
@@ -1683,7 +1722,7 @@ u64 Dynarmic_mem_reserve(t_dynarmic dynarmic, u64 address, u64 size, bool fixed,
   }
 
   address = (address + mask) &~ mask;
-  khash_t(memory) *memory = dynarmic->memory;
+  khash_t(memory) *memory = sharedHandle.memory;
   int ret;
   for(u64 vaddr = address; vaddr < address + size; vaddr += DYN_PAGE_SIZE) {
     khiter_t k;
@@ -1696,7 +1735,7 @@ u64 Dynarmic_mem_reserve(t_dynarmic dynarmic, u64 address, u64 size, bool fixed,
 #else
         //printf("Dynarmic_mem_reserve: force-remapping at address 0x%llx\n", address);
         // FIXME: what should I really do here? Unmap will cause subsequent 3 pages (remember we're running 4k binaries on 16k) to be unmapped aswell
-        //Dynarmic_munmap(handle, vaddr, DYN_PAGE_SIZE);
+        //Dynarmic_munmap(vaddr, DYN_PAGE_SIZE);
 #endif
       } else {
         address = vaddr + mask + 1;
@@ -1715,7 +1754,7 @@ u64 Dynarmic_mem_reserve(t_dynarmic dynarmic, u64 address, u64 size, bool fixed,
   return address;
 }
 
-u32 Dynarmic_direct_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, int flags, void *src, u64 off) {
+u32 Dynarmic_direct_mmap(u32 address, u32 size, int protection, int flags, void *src, u64 off) {
   if(address & DYN_PAGE_MASK) {
     errno = EINVAL;
     return -1;
@@ -1725,8 +1764,8 @@ u32 Dynarmic_direct_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protect
     return -1;
   }
 
-  khash_t(memory) *memory = dynarmic->memory;
-  address = Dynarmic_mem_reserve(dynarmic, address, size, flags & MAP_FIXED, DYN_PAGE_MASK);
+  khash_t(memory) *memory = sharedHandle.memory;
+  address = Dynarmic_mem_reserve(address, size, flags & MAP_FIXED, DYN_PAGE_MASK);
   if(address == -1) {
     fprintf(stderr, "reserve failed[%s->%s:%d]: addr=0x%x\n", __FILE__, __func__, __LINE__, address);
     return -1;
@@ -1736,8 +1775,8 @@ u32 Dynarmic_direct_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protect
     u64 idx = vaddr >> DYN_PAGE_BITS;
 
     void *addr = (void *)((u64)src + off + vaddr - address);
-    if(dynarmic->page_table && idx < dynarmic->num_page_table_entries) {
-      dynarmic->page_table[idx] = addr;
+    if(sharedHandle.page_table && idx < sharedHandle.num_page_table_entries) {
+      sharedHandle.page_table[idx] = addr;
     } else {
       // 0xffffff80001f0000ULL: 0x10000
     }
@@ -1748,7 +1787,7 @@ u32 Dynarmic_direct_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protect
   return address;
 }
 
-u32 Dynarmic_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, int flags, int fildes, u64 off, u64 mask) {
+u32 Dynarmic_mmap(u32 address, u32 size, int protection, int flags, int fildes, u64 off, u64 mask) {
   if(address & DYN_PAGE_MASK) {
     errno = EINVAL;
     return -1;
@@ -1757,8 +1796,8 @@ u32 Dynarmic_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, in
     errno = EINVAL;
     return -1;
   }
-  khash_t(memory) *memory = dynarmic->memory;
-  address = Dynarmic_mem_reserve(dynarmic, address, size, flags & MAP_FIXED, mask);
+  khash_t(memory) *memory = sharedHandle.memory;
+  address = Dynarmic_mem_reserve(address, size, flags & MAP_FIXED, mask);
   if(address == -1) {
     fprintf(stderr, "reserve failed[%s->%s:%d]: addr=0x%x\n", __FILE__, __func__, __LINE__, address);
     return -1;
@@ -1797,8 +1836,8 @@ u32 Dynarmic_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, in
   for(u64 vaddr = address; vaddr < address + size; vaddr += DYN_PAGE_SIZE) {
     u64 idx = vaddr >> DYN_PAGE_BITS;
 
-    if(dynarmic->page_table && idx < dynarmic->num_page_table_entries) {
-      dynarmic->page_table[idx] = (void *)addr;
+    if(sharedHandle.page_table && idx < sharedHandle.num_page_table_entries) {
+      sharedHandle.page_table[idx] = (void *)addr;
     } else {
       // 0xffffff80001f0000ULL: 0x10000
     }
@@ -1811,7 +1850,7 @@ u32 Dynarmic_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, in
   return address;
 }
 
-int Dynarmic_mprotect(t_dynarmic dynarmic, u64 address, u64 size, int perms) {
+int Dynarmic_mprotect(u64 address, u64 size, int perms) {
   if(address & DYN_PAGE_MASK) {
     errno = EINVAL;
     return -1;
@@ -1820,7 +1859,7 @@ int Dynarmic_mprotect(t_dynarmic dynarmic, u64 address, u64 size, int perms) {
     errno = EINVAL;
     return -1;
   }
-  khash_t(memory) *memory = dynarmic->memory;
+  khash_t(memory) *memory = sharedHandle.memory;
   for(u64 vaddr = address; vaddr < address + size; vaddr += DYN_PAGE_SIZE) {
     khiter_t k = kh_get(memory, memory, vaddr);
     if(k == kh_end(memory)) {
@@ -1839,14 +1878,14 @@ int Dynarmic_mprotect(t_dynarmic dynarmic, u64 address, u64 size, int perms) {
  * Method:    mem_write
  * Signature: (JJ[B)I
  */
-int Dynarmic_mem_1write(t_dynarmic dynarmic, u64 address, u64 size, char* src) {
-  khash_t(memory) *memory = dynarmic->memory;
+int Dynarmic_mem_1write(u64 address, u64 size, char* src) {
+  khash_t(memory) *memory = sharedHandle.memory;
   u64 vaddr_end = address + size;
   for(u64 vaddr = address & ~DYN_PAGE_MASK; vaddr < vaddr_end; vaddr += DYN_PAGE_SIZE) {
     u64 start = vaddr < address ? address - vaddr : 0;
     u64 end = vaddr + DYN_PAGE_SIZE <= vaddr_end ? DYN_PAGE_SIZE : (vaddr_end - vaddr);
     u64 len = end - start;
-    char *addr = get_memory_page(memory, vaddr, dynarmic->num_page_table_entries, dynarmic->page_table);
+    char *addr = get_memory_page(memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
     if(addr == NULL) {
       fprintf(stderr, "mem_write failed[%s->%s:%d]: vaddr=%p\n", __FILE__, __func__, __LINE__, (void*)vaddr);
       return 1;
@@ -1864,14 +1903,14 @@ int Dynarmic_mem_1write(t_dynarmic dynarmic, u64 address, u64 size, char* src) {
  * Method:    mem_read
  * Signature: (JJI)[B
  */
-int Dynarmic_mem_1read(t_dynarmic dynarmic, u64 address, u64 size, char* dest) {
-  khash_t(memory) *memory = dynarmic->memory;
+int Dynarmic_mem_1read(u64 address, u64 size, char* dest) {
+  khash_t(memory) *memory = sharedHandle.memory;
   u64 vaddr_end = address + size;
   for(u64 vaddr = address & ~DYN_PAGE_MASK; vaddr < vaddr_end; vaddr += DYN_PAGE_SIZE) {
     u64 start = vaddr < address ? address - vaddr : 0;
     u64 end = vaddr + DYN_PAGE_SIZE <= vaddr_end ? DYN_PAGE_SIZE : (vaddr_end - vaddr);
     u64 len = end - start;
-    char *addr = get_memory_page(memory, vaddr, dynarmic->num_page_table_entries, dynarmic->page_table);
+    char *addr = get_memory_page(memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
     if(addr == NULL) {
       fprintf(stderr, "mem_read failed[%s->%s:%d]: vaddr=%p\n", __FILE__, __func__, __LINE__, (void*)vaddr);
       return 1;
@@ -1888,9 +1927,9 @@ int Dynarmic_mem_1read(t_dynarmic dynarmic, u64 address, u64 size, char* dest) {
  * Method:    reg_write
  * Signature: (JIJ)I
  */
-int Dynarmic_reg_1write(t_dynarmic dynarmic, int index, u32 value) {
+int Dynarmic_reg_1write(int index, u32 value) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       jit->Regs()[index] = value;
     } else {
@@ -1905,9 +1944,9 @@ int Dynarmic_reg_1write(t_dynarmic dynarmic, int index, u32 value) {
  * Method:    reg_read
  * Signature: (JI)J
  */
-u32 Dynarmic_reg_1read(t_dynarmic dynarmic, int index) {
+u32 Dynarmic_reg_1read(int index) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       return jit->Regs()[index];
     } else {
@@ -1922,9 +1961,9 @@ u32 Dynarmic_reg_1read(t_dynarmic dynarmic, int index) {
  * Method:    reg_read_cpsr
  * Signature: (J)I
  */
-int Dynarmic_reg_1read_1cpsr(t_dynarmic dynarmic) {
+int Dynarmic_reg_1read_1cpsr() {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       return jit->Cpsr();
     } else {
@@ -1939,9 +1978,9 @@ int Dynarmic_reg_1read_1cpsr(t_dynarmic dynarmic) {
  * Method:    reg_write_cpsr
  * Signature: (JI)I
  */
-int Dynarmic_reg_1write_1cpsr(t_dynarmic dynarmic, int value) {
+int Dynarmic_reg_1write_1cpsr(int value) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       jit->SetCpsr(value);
       return 0;
@@ -1957,11 +1996,11 @@ int Dynarmic_reg_1write_1cpsr(t_dynarmic dynarmic, int value) {
  * Method:    reg_write_c13_c0_3
  * Signature: (JI)I
  */
-int Dynarmic_reg_1write_1c13_1c0_13(t_dynarmic dynarmic, int value) {
+int Dynarmic_reg_1write_1c13_1c0_13(int value) {
   {
-    DynarmicCallbacks32 *cb32 = dynarmic->cb32;
-    if(cb32) {
-      cb32->cp15.get()->uro = value;
+    DynarmicCallbacks32 *cb = sharedHandle.cb;
+    if(cb) {
+      cb->cp15.get()->uro = value;
       return 0;
     } else {
       abort();
@@ -1975,9 +2014,9 @@ int Dynarmic_reg_1write_1c13_1c0_13(t_dynarmic dynarmic, int value) {
  * Method:    emu_start
  * Signature: (JJ)I
  */
-int Dynarmic_emu_1start(t_dynarmic dynarmic, u32 pc) {
+int Dynarmic_emu_1start(u32 pc) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       Dynarmic::A32::Jit *cpu = jit;
       if(pc & 1) {
@@ -1986,7 +2025,9 @@ int Dynarmic_emu_1start(t_dynarmic dynarmic, u32 pc) {
         cpu->SetCpsr(0x000001d0); // Arm user mode
       }
       cpu->Regs()[15] = (u32) (pc & ~1);
-      cpu->Run();
+      while(cpu->Run() == LC32HaltReasonSVC) {
+        sharedHandle.ucb->CallSVC(0x80);
+      }
     } else {
       return 1;
     }
@@ -1999,9 +2040,9 @@ int Dynarmic_emu_1start(t_dynarmic dynarmic, u32 pc) {
  * Method:    emu_stop
  * Signature: (J)I
  */
-int Dynarmic_emu_1stop(t_dynarmic dynarmic) {
+int Dynarmic_emu_1stop() {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     if(jit) {
       Dynarmic::A32::Jit *cpu = jit;
       cpu->HaltExecution();
@@ -2017,7 +2058,7 @@ int Dynarmic_emu_1stop(t_dynarmic dynarmic) {
  * Method:    context_alloc
  * Signature: (J)J
  */
-void* Dynarmic_context_1alloc(t_dynarmic dynarmic) {
+void* Dynarmic_context_1alloc() {
   {
     void *ctx = malloc(sizeof(struct context32));
     return ctx;
@@ -2029,15 +2070,15 @@ void* Dynarmic_context_1alloc(t_dynarmic dynarmic) {
  * Method:    context_restore
  * Signature: (JJ)V
  */
-void Dynarmic_context_1restore(t_dynarmic dynarmic, t_context32 ctx) {
+void Dynarmic_context_1restore(t_context32 ctx) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     jit->Regs() = ctx->regs;
     jit->ExtRegs() = ctx->extRegs;
     jit->SetCpsr(ctx->cpsr);
     jit->SetFpscr(ctx->fpscr);
 
-    DynarmicCallbacks32 *cb = dynarmic->cb32;
+    DynarmicCallbacks32 *cb = sharedHandle.cb;
     cb->cp15.get()->uro = ctx->uro;
   }
 }
@@ -2047,15 +2088,15 @@ void Dynarmic_context_1restore(t_dynarmic dynarmic, t_context32 ctx) {
  * Method:    context_save
  * Signature: (JJ)V
  */
-void Dynarmic_context_1save(t_dynarmic dynarmic, t_context32 ctx) {
+void Dynarmic_context_1save(t_context32 ctx) {
   {
-    Dynarmic::A32::Jit *jit = dynarmic->jit32;
+    Dynarmic::A32::Jit *jit = threadHandle.jit;
     ctx->regs = jit->Regs();
     ctx->extRegs = jit->ExtRegs();
     ctx->cpsr = jit->Cpsr();
     ctx->fpscr = jit->Fpscr();
 
-    DynarmicCallbacks32 *cb = dynarmic->cb32;
+    DynarmicCallbacks32 *cb = sharedHandle.cb;
     ctx->uro = cb->cp15.get()->uro;
   }
 }

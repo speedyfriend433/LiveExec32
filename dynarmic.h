@@ -19,6 +19,8 @@
 
 // TSB (thread local variables)
 #define ARM_REG_C13_C0_3 113
+#define ARM_REG_SP 13
+#define ARM_REG_PC 15
 
 #define PAGE_TABLE_ADDRESS_SPACE_BITS 36
 #define DYN_PAGE_BITS 12 // 4k
@@ -41,6 +43,9 @@
 #define PRE_CALLBACK_SYSCALL_NUMBER 0x8866
 #define POST_CALLBACK_SYSCALL_NUMBER 0x8888
 #define DARWIN_SWI_SYSCALL 0x80
+
+#define LC32HaltReasonSVC Dynarmic::HaltReason::UserDefined1
+#define LC32HaltReasonRetFromGuest Dynarmic::HaltReason::UserDefined2
 
 struct guest_file_mapping {
     const char *name;
@@ -157,46 +162,141 @@ public:
     Dynarmic::A32::Jit *cpu;
 };
 
+__BEGIN_DECLS
+
 class DynarmicCallbacks32;
-typedef struct dynarmic {
+typedef struct {
   khash_t(memory) *memory;
   size_t num_page_table_entries;
   void **page_table;
   union {
-    DynarmicCallbacks32 *cb32;
+    DynarmicCallbacks32 *cb;
     Dynarmic::A32::UserCallbacks *ucb;
   };
-  Dynarmic::A32::Jit *jit32;
   Dynarmic::ExclusiveMonitor *monitor;
-  DynarmicCpsr *cpsr;
   LC32Filesystem *fs;
-} *t_dynarmic;
+  u32 guest_dlsym, guest_LC32InvokeGuestC;
+} dynarmic;
 
-extern "C" {
-extern t_dynarmic handle;
+typedef struct {
+  Dynarmic::A32::Jit *jit;
+  DynarmicCpsr *cpsr;
+} dynarmic_thread;
+
+// Handles
+extern dynarmic sharedHandle;
+extern __thread dynarmic_thread threadHandle;
 
 char *get_memory_page(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table);
-inline void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table);
+void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table);
 
-t_dynarmic Dynarmic_nativeInitialize();
-void Dynarmic_nativeDestroy(t_dynarmic dynarmic);
-int Dynarmic_munmap(t_dynarmic dynarmic, u64 address, u64 size);
-u32 Dynarmic_direct_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, int flags, void *src, u64 off);
-u32 Dynarmic_mmap(t_dynarmic dynarmic, u32 address, u32 size, int protection, int flags, int fildes, u64 off, u64 mask = DYN_PAGE_MASK);
-int Dynarmic_mprotect(t_dynarmic dynarmic, u64 address, u64 size, int perms);
-int Dynarmic_mem_1write(t_dynarmic dynarmic, u64 address, u64 size, char* src);
-int Dynarmic_mem_1read(t_dynarmic dynarmic, u64 address, u64 size, char* dest);
-int Dynarmic_reg_1write(t_dynarmic dynarmic, int index, u32 value);
-u32 Dynarmic_reg_1read(t_dynarmic dynarmic, int index);
-int Dynarmic_reg_1read_1cpsr(t_dynarmic dynarmic);
-int Dynarmic_reg_1write_1cpsr(t_dynarmic dynarmic, int value);
-int Dynarmic_reg_1write_1c13_1c0_13(t_dynarmic dynarmic, int value);
-int Dynarmic_emu_1start(t_dynarmic dynarmic, u32 pc);
-int Dynarmic_emu_1stop(t_dynarmic dynarmic);
-void* Dynarmic_context_1alloc(t_dynarmic dynarmic);
-void Dynarmic_context_1restore(t_dynarmic dynarmic, t_context32 ctx);
-void Dynarmic_context_1save(t_dynarmic dynarmic, t_context32 ctx);
+bool Dynarmic_nativeInitialize();
+void Dynarmic_nativeDestroy();
+int Dynarmic_munmap(u64 address, u64 size);
+u32 Dynarmic_direct_mmap(u32 address, u32 size, int protection, int flags, void *src, u64 off);
+u32 Dynarmic_mmap(u32 address, u32 size, int protection, int flags, int fildes, u64 off, u64 mask = DYN_PAGE_MASK);
+int Dynarmic_mprotect(u64 address, u64 size, int perms);
+int Dynarmic_mem_1write(u64 address, u64 size, char* src);
+int Dynarmic_mem_1read(u64 address, u64 size, char* dest);
+int Dynarmic_reg_1write(int index, u32 value);
+u32 Dynarmic_reg_1read(int index);
+int Dynarmic_reg_1read_1cpsr();
+int Dynarmic_reg_1write_1cpsr(int value);
+int Dynarmic_reg_1write_1c13_1c0_13(int value);
+int Dynarmic_emu_1start(u32 pc);
+int Dynarmic_emu_1stop();
+void* Dynarmic_context_1alloc();
+void Dynarmic_context_1restore(t_context32 ctx);
+void Dynarmic_context_1save(t_context32 ctx);
 void Dynarmic_free(void *ctx);
 
-void HandleSEGVAddressTranslation(int signum, siginfo_t* siginfo, void* context);
-}
+u64 LC32Dlsym(u32 guest_name);
+u64 LC32GetHostObject(u32 guest_class, bool returnClass);
+u64 LC32GetHostSelector(u32 guest_selector);
+u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args);
+u32 LC32HostToGuestCopyClassName(u32 guest_output, size_t length, u64 host_object);
+
+__END_DECLS
+
+#define U32_MASK (sizeof(u32)-1)
+// create a string in the guest stack pointer
+class DynarmicGuestStackString {
+public:
+    ~DynarmicGuestStackString() {
+        threadHandle.jit->Regs()[ARM_REG_SP] += totalLen;
+    }
+
+    DynarmicGuestStackString(const char *hostPtr) {
+        totalLen = (strlen(hostPtr) + U32_MASK) &~ U32_MASK;
+        guestPtr = (threadHandle.jit->Regs()[ARM_REG_SP] -= totalLen);
+        Dynarmic_mem_1write(guestPtr, totalLen, (char *)hostPtr);
+    }
+
+    u32 guestPtr;
+    size_t totalLen;
+};
+
+// wrapper to access guest string depending on its boundary
+#define DynarmicHostString_NEED_FREE (1ull << 63)
+class DynarmicHostString {
+public:
+    ~DynarmicHostString() {
+        if(shouldFree) {
+            if(dirty) {
+                Dynarmic_mem_1write(guestPtr, totalLen, hostPtr);
+            }
+            free(hostPtr);
+        }
+    }
+
+    // Initialize the wrapper with a given guest string pointer
+    DynarmicHostString(u32 guestPtr) : dirty{false}, guestPtr{guestPtr} {
+         char *dest = (char *)get_memory(sharedHandle.memory, guestPtr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+         if(!dest) {
+             abort();
+         }
+
+         totalLen = strlen(dest);
+         u32 pageOff = guestPtr & DYN_PAGE_MASK;
+         shouldFree = pageOff + totalLen >= DYN_PAGE_SIZE;
+         if(!shouldFree) {
+             hostPtr = dest;
+         } else {
+             totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
+             for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
+                 char *page = get_memory_page(sharedHandle.memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+                 if(!page) {
+                     abort();
+                 }
+                 size_t len = strlen(page);
+                 totalLen += len;
+                 if(len < DYN_PAGE_SIZE) {
+                     break;
+                 }
+             }
+             hostPtr = (char *)malloc(totalLen + 1);
+             hostPtr[totalLen] = '\0';
+             Dynarmic_mem_1read(guestPtr, totalLen, hostPtr);
+        }
+    }
+
+    // Detach hostPtr from being automatically freed by the destructor
+    const char *hostPtrForGuest() {
+        if(shouldFree) {
+            // since we can't pass this object to guest, set a bit so we can detect it later
+            hostPtr = (char *)((u64)hostPtr | DynarmicHostString_NEED_FREE);
+        }
+        shouldFree = false;
+        return hostPtr;
+    }
+
+    char *hostPtrForWriting() {
+        dirty = true;
+        return hostPtr;
+    }
+
+    bool shouldFree, dirty;
+    size_t totalLen;
+    u32 guestPtr;
+    char *hostPtr;
+};

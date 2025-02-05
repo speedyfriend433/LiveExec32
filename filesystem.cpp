@@ -4,60 +4,6 @@
 
 using namespace std;
 
-// Create a class which is a wrapper to access guest string depending on its boundary
-class DynarmicString {
-public:
-    ~DynarmicString() {
-        if(!direct) {
-            if(dirty) {
-                Dynarmic_mem_1write(handle, guestPtr, totalLen, hostPtr);
-            }
-            free(hostPtr);
-        }
-    }
-
-    // Initialize the wrapper with a given guest string pointer
-    DynarmicString(u32 guestPtr) : dirty{false}, guestPtr{guestPtr} {
-         char *dest = (char *)get_memory(handle->memory, guestPtr, handle->num_page_table_entries, handle->page_table);
-         if(!dest) {
-             abort();
-         }
-
-         totalLen = strlen(dest);
-         u32 pageOff = guestPtr & DYN_PAGE_MASK;
-         direct = pageOff + totalLen < DYN_PAGE_SIZE;
-         if(direct) {
-             hostPtr = dest;
-         } else {
-             totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
-             for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
-                 char *page = get_memory_page(handle->memory, vaddr, handle->num_page_table_entries, handle->page_table);
-                 if(!page) {
-                     abort();
-                 }
-                 size_t len = strlen(page);
-                 totalLen += len;
-                 if(len < DYN_PAGE_SIZE) {
-                     break;
-                 }
-             }
-             hostPtr = (char *)malloc(totalLen + 1);
-             hostPtr[totalLen] = '\0';
-             Dynarmic_mem_1read(handle, guestPtr, totalLen, hostPtr);
-        }
-    }
-
-    char *hostPtrForWriting() {
-        dirty = true;
-        return hostPtr;
-    }
-
-    bool direct, dirty;
-    size_t totalLen;
-    u32 guestPtr;
-    char *hostPtr;
-};
-
 // Returns true if a target path starts with base
 bool LC32Filesystem::isSubpath(const string& target, const string& base) {
     size_t baseSize = base.size();
@@ -114,7 +60,7 @@ bool LC32Filesystem::pathGuestToHost(char *input, char *output) {
 }
 
 bool LC32Filesystem::pathGuestToHost(u32 inputAddr, char *output) {
-    DynarmicString input(inputAddr);
+    DynarmicHostString input(inputAddr);
     return pathGuestToHost(input.hostPtr, output);
 }
 
@@ -123,7 +69,7 @@ bool LC32Filesystem::pathHostToGuest(char *input, char *output) {
 }
 
 bool LC32Filesystem::pathHostToGuest(char *input, u32 outputAddr) {
-    DynarmicString output(outputAddr);
+    DynarmicHostString output(outputAddr);
     return pathLeftToRight(hostmpVec, guestmpVec, input, output.hostPtrForWriting());
 }
 

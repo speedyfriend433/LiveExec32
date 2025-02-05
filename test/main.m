@@ -1,23 +1,44 @@
+#import <objc/runtime.h>
 #import <Foundation/Foundation.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <dlfcn.h>
+#import <UIKit/UIKit.h>
+#import <LC32/LC32.h>
+
+@implementation UIResponder
+@end
+@implementation UIView
+@end
+/*
+@implementation UIWindow
+@end
+*/
+
+// My app code
+@interface AppDelegate : UIResponder <UIApplicationDelegate>
+//@property (strong, nonatomic) UIWindow *window;
+@end
+@implementation AppDelegate
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    // Override point for customization after application launch.
+    return YES;
+}
+- (void)applicationWillResignActive:(UIApplication *)application {}
+- (void)applicationDidEnterBackground:(UIApplication *)application {}
+- (void)applicationWillEnterForeground:(UIApplication *)application {}
+- (void)applicationDidBecomeActive:(UIApplication *)application {}
+- (void)applicationWillTerminate:(UIApplication *)application {}
+@end
 
 // NSLog doesn't work yet
 #define printObjC(...) printf("%s\n", [NSString stringWithFormat:__VA_ARGS__].UTF8String)
 
-int main() {
+int main(int argc, char **argv) {
   printf("Hello world from 32bit!\n");
 
-  NSProcessInfo *info = NSProcessInfo.processInfo;
-  printObjC(@"NSProcessInfo=%@", info);
-  printObjC(@"arguments=%@", info.arguments);
-  printObjC(@"environment=%@", info.environment);
-  printObjC(@"operatingSystemVersionString=%@", info.operatingSystemVersionString);
-  printObjC(@"processName=%@", info.processName);
-  printObjC(@"physicalMemory=0x%x", info.physicalMemory);
-  // crash here
-  printObjC(@"hostName=%@", info.hostName);
-
-  return 0;
+  NSString *literal = @"literal string";
+/*
+  printObjC(@"ClassName of literal string %@", literal.class);
+*/
+  NSString *cls =  NSStringFromClass(AppDelegate.class);
+  //printObjC(@"ClassName of constant %@", cls.class);
+  return UIApplicationMain(argc, argv, nil, cls);
 }

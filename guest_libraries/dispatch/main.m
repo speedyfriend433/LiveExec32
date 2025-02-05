@@ -1,0 +1,1 @@
+void libdispatch_init() {}
