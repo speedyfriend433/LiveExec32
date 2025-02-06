@@ -211,7 +211,7 @@ void Dynarmic_context_1save(t_context32 ctx);
 void Dynarmic_free(void *ctx);
 
 u64 LC32Dlsym(u32 guest_name);
-u64 LC32GetHostObject(u32 guest_class, bool returnClass);
+u64 LC32GetHostObject(u32 guest_self, u32 guest_class, bool returnClass);
 u64 LC32GetHostSelector(u32 guest_selector);
 u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args);
 u32 LC32HostToGuestCopyClassName(u32 guest_output, size_t length, u64 host_object);
@@ -227,7 +227,7 @@ public:
     }
 
     DynarmicGuestStackString(const char *hostPtr) {
-        totalLen = (strlen(hostPtr) + U32_MASK) &~ U32_MASK;
+        totalLen = (strlen(hostPtr) + 1 + U32_MASK) &~ U32_MASK;
         guestPtr = (threadHandle.jit->Regs()[ARM_REG_SP] -= totalLen);
         Dynarmic_mem_1write(guestPtr, totalLen, (char *)hostPtr);
     }

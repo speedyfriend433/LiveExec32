@@ -4,6 +4,12 @@
 //#define __darwin_time_t int
 //#define long int
 
+struct objc_method_32 {
+    uint32_t method_name;
+    uint32_t method_types;
+    uint32_t method_imp;
+};
+
 struct sigaction_32 {
 #if 0
   union {
@@ -11,7 +17,7 @@ struct sigaction_32 {
     void    (*__sa_sigaction)(int, struct __siginfo *, void *);
   } __sigaction_u;                /* signal handler */
 #endif
-  u32 _sa_handler;
+  uint32_t _sa_handler;
   int     sa_flags;               /* see signal options below */
   sigset_t sa_mask;               /* signal mask to apply */
 };

@@ -116,14 +116,16 @@ u32 prependString(u32& address, const char* fmt, ...) {
 }
 
 int main(int argc, char* argv[], char* envp[]) {
+  const char *execPath;
   if (argc == 1) {
     printf("Usage: %s <path> argv...\n", argv[0]);
-    return 1;
+    execPath = "/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/LiveExec32/test/a.out";
+    //return 1;
+  } else {
+    execPath = argv[1];
   }
 
   Dynarmic_nativeInitialize();
-
-  const char *execPath = argv[1];
   u32 execAddr = Dynarmic_map_file(false, 0x20000000, execPath);
 
   setenv("DYLD_PATH", DEFAULT_DYLD_PATH, 0);

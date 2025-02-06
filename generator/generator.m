@@ -1,6 +1,7 @@
 @import Darwin;
 @import QuartzCore;
 @import Foundation;
+@import UIKit;
 @import ObjectiveC;
 
 #define CLS(name) objc_getClass(#name)
@@ -73,7 +74,7 @@
     if ([self.type isEqualToString:@"BOOL *"]) {
         return [NSString stringWithFormat:@"*guest_arg%1$d = (BOOL)host_arg%1$d;", self.index];
     } else if ([self.type isEqualToString:@"id *"]) {
-        return [NSString stringWithFormat:@"*guest_arg%1$d = [[LC32HostToGuestClass(host_arg%1$d) alloc] initWithHostSelf:host_arg%1$d];", self.index];
+        return [NSString stringWithFormat:@"*guest_arg%1$d = LC32HostToGuestObject(host_arg%1$d);", self.index];
     } else if ([self.type isEqualToString:@"const char *"]) {
         // the string might have been copied, in this case invoke back to the host to free them just in case
         return [NSString stringWithFormat:@"LC32GuestToHostCStringFree(host_arg%1$d);", self.index];
@@ -172,9 +173,9 @@
         if([self.method.selectorString hasPrefix:@"init"]) {// init, initWith*
             return @"self.host_self = host_ret; return self;";
         } else {
-            return @"return [[LC32HostToGuestClass(host_ret) alloc] initWithHostSelf:host_ret];";
+            return @"return LC32HostToGuestObject(host_ret);";
         }
-    } else if ([self.returnType isEqualToString:@"BOOL"] || [self.returnType isEqualToString:@"NSInteger"] || [self.returnType isEqualToString:@"NSUInteger"]) {
+    } else if ([self.returnType isEqualToString:@"BOOL"] || [self.returnType isEqualToString:@"NSInteger"] || [self.returnType isEqualToString:@"NSUInteger"] || [self.returnType isEqualToString:@"CGFloat"]) {
         return [NSString stringWithFormat:@"return (%@)host_ret;", self.returnType];
     }
     return [NSString stringWithFormat:@"/* %s: unhandled type %@ */", sel_getName(_cmd), self.returnType];
@@ -203,11 +204,13 @@
     for(int m = 0; m < mc; m++) {
         [self validateAndAddMethod:mlist[m] isInstanceMethod:NO];
     }
+    free(mlist);
 
     mlist = class_copyMethodList(class, &mc);
     for(int m = 0; m < mc; m++) {
         [self validateAndAddMethod:mlist[m] isInstanceMethod:YES];
     }
+    free(mlist);
 
     return self;
 }
@@ -238,6 +241,9 @@
 
     if(!self.imagePath && [method.imagePath isEqualToString:[NSBundle bundleForClass:self.cls].executablePath]) {
         self.imagePath = method.imagePath;
+    }
+    if ([self.imagePath hasSuffix:@"/UIKitCore"]) {
+        self.imagePath = @"/System/Library/Frameworks/UIKit.framework/UIKit";
     }
 /*
     if(method.imagePath != self.imagePath) {
@@ -275,7 +281,9 @@ int main(int argc, char **argv) {
 */
     dlopen("/var/jb/usr/lib/TweakInject/libFLEX.dylib", RTLD_GLOBAL);
 
-    NSArray<Class> *classes = @[CABasicAnimation.class, CAKeyframeAnimation.class, CAPropertyAnimation.class, CAAnimation.class, CALayer.class, CAMediaTimingFunction.class, NSArray.class, NSMutableArray.class, NSAssertionHandler.class, NSAutoreleasePool.class, NSBundle.class, NSDate.class, NSDictionary.class, NSMutableDictionary.class, NSNull.class, NSNumber.class, NSString.class, NSThread.class, NSTimer.class, NSURL.class, NSUserDefaults.class, NSValue.class];
+    NSArray<Class> *classes = @[CABasicAnimation.class, CAKeyframeAnimation.class, CAPropertyAnimation.class, CAAnimation.class, CALayer.class, CAMediaTimingFunction.class,
+        NSArray.class, NSMutableArray.class, NSAssertionHandler.class, NSAutoreleasePool.class, NSBundle.class, NSDate.class, NSDictionary.class, NSMutableDictionary.class, NSNull.class, NSNumber.class, NSString.class, NSThread.class, NSTimer.class, NSURL.class, NSUserDefaults.class, NSValue.class,
+        UIApplication.class, objc_getClass("UIDynamicSystemColor"), objc_getClass("UIDynamicColor"), UIColor.class, UIView.class, UIWindow.class, UIResponder.class, UIViewController.class, UINavigationController.class, UIScreen.class, objc_getClass("UILayoutContainerView")];
     for(Class cls in classes) {
         printf("Generating for %s\n", class_getName(cls));
         ClassBuilder *classContent = [[ClassBuilder alloc] initWithClass:cls];

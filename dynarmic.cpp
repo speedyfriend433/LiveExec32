@@ -1511,7 +1511,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             }
             case 1007: { // LC32GetHostObject
-                u64 result = LC32GetHostObject(cpu->Regs()[0], cpu->Regs()[1]);
+                u64 result = LC32GetHostObject(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2]);
                 cpu->Regs()[0] = (u32)result;
                 cpu->Regs()[1] = (u32)(result >> 32);
                 break;

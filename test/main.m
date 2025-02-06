@@ -3,22 +3,16 @@
 #import <UIKit/UIKit.h>
 #import <LC32/LC32.h>
 
-@implementation UIResponder
-@end
-@implementation UIView
-@end
-/*
-@implementation UIWindow
-@end
-*/
-
-// My app code
+// My test app code
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
-//@property (strong, nonatomic) UIWindow *window;
+@property (strong, nonatomic) UIWindow *window;
 @end
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    // Override point for customization after application launch.
+    self.window = [[UIWindow alloc] init];
+    self.window.rootViewController = [UINavigationController new];
+    self.window.backgroundColor = UIColor.blackColor;
+    [self.window makeKeyAndVisible];
     return YES;
 }
 - (void)applicationWillResignActive:(UIApplication *)application {}
@@ -33,12 +27,6 @@
 
 int main(int argc, char **argv) {
   printf("Hello world from 32bit!\n");
-
-  NSString *literal = @"literal string";
-/*
-  printObjC(@"ClassName of literal string %@", literal.class);
-*/
-  NSString *cls =  NSStringFromClass(AppDelegate.class);
   //printObjC(@"ClassName of constant %@", cls.class);
-  return UIApplicationMain(argc, argv, nil, cls);
+  return UIApplicationMain(argc, argv, nil, NSStringFromClass(AppDelegate.class));
 }

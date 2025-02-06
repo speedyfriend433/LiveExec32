@@ -93,8 +93,15 @@ Class LC32HostToGuestClass(uint64_t address) {
     return objc_getClass(name);
 }
 
+// Get the guest object pointer from host. The host may call back to guest with initWithHostSelf: and return it.
+id LC32HostToGuestObject(uint64_t host_object) {
+    static uint64_t hostPtr = 0;
+    if(!hostPtr) hostPtr = LC32GetHostSelector(@selector(guest_self));
+    return (id)LC32InvokeHostSelector(host_object, hostPtr);
+}
+
 // Used in host_self, this function returns a host class or host object initialized
-uint64_t LC32GetHostObject(const char *name, bool returnClass);
+uint64_t LC32GetHostObject(id self, const char *name, bool returnClass);
 __asm__(" \
 .arm \n \
 .balign 4 \n \
@@ -144,7 +151,7 @@ _LC32InvokeGuestC: \n \
 @implementation NSObject(LC32)
 - (instancetype)initWithHostSelf:(uint64_t)host_self {
     // [NSObject init] does nothing, we don't need to call it, consequently it also calls up to the overridden init function of the subclass causing recursive call
-    //self = [self init];
+    //self = [super init];
     self.host_self = host_self;
     return self;
 }
@@ -154,10 +161,10 @@ static const void *kHostSelf = &kHostSelf;
     objc_setAssociatedObject(self, kHostSelf, [LC32HostObjectPointer pointerWithValue:ptr], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 - (uint64_t)host_self {
-    printf("Calling from %s:0x%08x:0x%08x, isClass? = %d\n", class_getName(self.class), self, self.class, object_isClass(self));
+    printf("Calling from %s:0x%08x:0x%08x, isClass? = %d\n", class_getName(self.class), self, object_isClass(self));
     uint64_t ptr = ((LC32HostObjectPointer *)objc_getAssociatedObject(self, kHostSelf)).value;
     if(!ptr) {
-        self.host_self = ptr = LC32GetHostObject(class_getName(self.class), object_isClass(self));
+        self.host_self = ptr = LC32GetHostObject(self, class_getName(self.class), object_isClass(self));
     }
     assert(ptr != 0);
     return ptr;
