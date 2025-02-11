@@ -12,6 +12,7 @@
 
 #include <dlfcn.h>
 #include <sys/mman.h>
+#include <mach-o/fat.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
 #include <mach-o/reloc.h>
@@ -47,7 +48,32 @@ u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
 
   guestMappings[guestMappingLen].name = strdup(basename((char *)path));
 
-  struct mach_header *header = (struct mach_header *)map;
+  struct mach_header *header;
+  // FIXME: may not work
+  if(*(uint32_t *)map == FAT_CIGAM) {
+    struct fat_header *fatheader = (struct fat_header *)map;
+    struct fat_arch *arch = (struct fat_arch *)(map + sizeof(struct fat_header));
+    for(int i = 0; i < OSSwapInt32(fatheader->nfat_arch); i++) {
+      int subtype = OSSwapInt32(arch->cpusubtype);
+      int offset = OSSwapInt32(arch->offset);
+      if(subtype == CPU_SUBTYPE_ARM_V7S) {
+        header = (struct mach_header *)(map + offset);
+        // preferred subtype
+        break;
+      } else if(subtype == CPU_SUBTYPE_ARM_V7) {
+        header = (struct mach_header *)(map + offset);
+        // look for armv7s
+      } else if(subtype == CPU_SUBTYPE_ARM_V6 && !header) {
+        header = (struct mach_header *)(map + offset);
+        // look for armv7s or armv7
+      }
+      arch = (struct fat_arch *)((uintptr_t)arch + sizeof(struct fat_arch));
+    }
+  } else {
+    header = (struct mach_header *)map;
+  }
+  assert(header->magic == MH_MAGIC && header->cputype == CPU_TYPE_ARM);
+
   uintptr_t cur = (uintptr_t)header + sizeof(mach_header);
   load_command *lc;
   int firstIndex = 0;
@@ -117,16 +143,19 @@ u32 prependString(u32& address, const char* fmt, ...) {
 
 int main(int argc, char* argv[], char* envp[]) {
   const char *execPath;
-  if (argc == 1) {
+  if (getppid() == 1) {
+    // test app
+    execPath = "/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/ipas/FS3 Mobile.app/FS3 Mobile";
+//"/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/LiveExec32/test/a.out";
+  } else if (argc == 1) {
     printf("Usage: %s <path> argv...\n", argv[0]);
-    execPath = "/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/LiveExec32/test/a.out";
-    //return 1;
+    return 1;
   } else {
     execPath = argv[1];
   }
 
   Dynarmic_nativeInitialize();
-  u32 execAddr = Dynarmic_map_file(false, 0x20000000, execPath);
+  u32 execAddr = Dynarmic_map_file(false, 0x11000000, execPath);
 
   setenv("DYLD_PATH", DEFAULT_DYLD_PATH, 0);
   const char *dyldPath = getenv("DYLD_PATH");
@@ -191,6 +220,7 @@ int main(int argc, char* argv[], char* envp[]) {
     //prependString(dyldStackPtr, "OBJC_PRINT_CLASS_SETUP=1"),
     //prependString(dyldStackPtr, "DYLD_LIBRARY_PATH=%1$s/usr/lib:%1$s/usr/lib/system", rootPath),
     //prependString(dyldStackPtr, "DYLD_FRAMEWORK_PATH=%1$s/System/Library/Frameworks:%1$s/System/Library/PrivateFrameworks", rootPath),
+    prependString(dyldStackPtr, "DYLD_SHARED_REGION=private"),
     prependString(dyldStackPtr, "DYLD_PRINT_OPTS=1"),
     prependString(dyldStackPtr, "DYLD_PRINT_ENV=1"),
     prependString(dyldStackPtr, "DYLD_PRINT_SEGMENTS=1"),

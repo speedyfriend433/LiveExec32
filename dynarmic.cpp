@@ -151,9 +151,7 @@ int guest___sysctl(u32 guest_name, u_int namelen, u32 guest_oldp, u32 guest_oldl
 
 int guest___sysctlbyname(u32 guest_name, u_int namelen, u32 guest_oldp, u32 guest_oldlenp, u32 guest_newp, size_t newlen) {
     // TODO: fake stuff like CPU architecture and KERN_USRSTACK32
-    char host_name[0x100];
-    assert(namelen < sizeof(host_name));
-    Dynarmic_mem_1read(guest_name, namelen, (char *)host_name);
+    DynarmicHostString host_name(guest_name);
 
     // Guess nothing is larger than 1kb
     size_t host_oldlenp;
@@ -165,7 +163,7 @@ int guest___sysctlbyname(u32 guest_name, u_int namelen, u32 guest_oldp, u32 gues
     }
 
     int result = syscallRetCarry(SYS_sysctlbyname,
-        host_name, namelen,
+        host_name.hostPtr, namelen,
         guest_oldp ? &host_oldp : NULL,
         guest_oldlenp ? &host_oldlenp : 0,
         guest_newp ? (int *)host_newp : NULL, newlen,
@@ -288,6 +286,12 @@ guest_mach_msg_trap(u32 guest_msg,
         }
         case 3444: {
             MACH_MSG_UNION(task_register_dyld_image_infos, Mess);
+            host_header->msgh_size = sizeof(Mess->Out);
+            Mess->Out.RetCode = KERN_SUCCESS;
+            break;
+        }
+        case 3447: {
+            MACH_MSG_UNION(task_register_dyld_shared_cache_image_info, Mess);
             host_header->msgh_size = sizeof(Mess->Out);
             Mess->Out.RetCode = KERN_SUCCESS;
             break;
@@ -1461,7 +1465,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                     break;
                 }
             case 1001: { // LC32Dlsym
-                u64 result = LC32Dlsym(cpu->Regs()[0]);
+                u64 result = LC32Dlsym(cpu->Regs()[0], cpu->Regs()[1]);
                 cpu->Regs()[0] = (u32)result;
                 cpu->Regs()[1] = (u32)(result >> 32);
                 break;
@@ -1478,7 +1482,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             }
             case 1003: { // LC32GuestToHostCString
-                DynarmicHostString host_pointer(cpu->Regs()[0]);
+                DynarmicHostString host_pointer(cpu->Regs()[0], cpu->Regs()[1]);
                 u64 result = (u64)host_pointer.hostPtrForGuest();
                 cpu->Regs()[0] = (u32)result;
                 cpu->Regs()[1] = (u32)(result >> 32);
@@ -1486,6 +1490,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
             }
             case 1004: { // LC32GuestToHostCStringFree
                 u64 pointer = cpu->Regs()[0] | ((u64)cpu->Regs()[1] << 32);
+                // TODO: maybe move the check to guest
                 if(pointer & DynarmicHostString_NEED_FREE) {
                     free((void *)((u64)pointer & ~DynarmicHostString_NEED_FREE));
                 }
@@ -1511,6 +1516,11 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             }
             case 1007: { // LC32GetHostObject
+                if(cpu->IsExecuting()) {
+                    // Get out of the callback first, since host may call other guest functions
+                    cpu->HaltExecution(LC32HaltReasonSVC);
+                    return;
+                }
                 u64 result = LC32GetHostObject(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2]);
                 cpu->Regs()[0] = (u32)result;
                 cpu->Regs()[1] = (u32)(result >> 32);

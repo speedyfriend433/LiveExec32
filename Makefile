@@ -9,8 +9,10 @@ APPLICATION_NAME = LiveExec32
 #TOOL_NAME = LiveExec32
 
 LiveExec32_FILES = \
-  main.cpp arm_dynarmic_cp15.cpp dynarmic.cpp filesystem.cpp variables.cpp bridge.mm ap_getparents.c log.m \
-  host_frameworks/UIKit/UIKit.mm host_frameworks/tmp/tmp.m
+  main.cpp arm_dynarmic_cp15.cpp dynarmic.cpp filesystem.cpp variables.cpp ap_getparents.c \
+  bridge.mm bridge.s log.m \
+  host_frameworks/CoreGraphics/CoreGraphics.mm \
+  host_frameworks/UIKit/UIKit.mm
 LiveExec32_CFLAGS = -Iinclude -DDYNARMIC_MASTER -Wno-error
 LiveExec32_LDFLAGS = -Llib -ldynarmic
 LiveExec32_CODESIGN_FLAGS = -Sentitlements.plist

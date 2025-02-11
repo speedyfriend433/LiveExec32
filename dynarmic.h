@@ -19,8 +19,8 @@
 
 // TSB (thread local variables)
 #define ARM_REG_C13_C0_3 113
-#define ARM_REG_SP 13
-#define ARM_REG_PC 15
+#define ARM_REG_SP Reg::SP
+#define ARM_REG_PC Reg::PC
 
 #define PAGE_TABLE_ADDRESS_SPACE_BITS 36
 #define DYN_PAGE_BITS 12 // 4k
@@ -46,6 +46,43 @@
 
 #define LC32HaltReasonSVC Dynarmic::HaltReason::UserDefined1
 #define LC32HaltReasonRetFromGuest Dynarmic::HaltReason::UserDefined2
+
+class Reg {
+public:
+  enum RegEnum {
+    R0,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
+    R6,
+    R7,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+    SP = R13,
+    LR = R14,
+    PC = R15,
+    INVALID_REG = 99
+  };
+};
+
+class ExtReg {
+public:
+  enum ExtRegEnum {
+    // clang-format off
+    S0, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S16, S17, S18, S19, S20, S21, S22, S23, S24, S25, S26, S27, S28, S29, S30, S31,
+    D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15, D16, D17, D18, D19, D20, D21, D22, D23, D24, D25, D26, D27, D28, D29, D30, D31,
+    Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15
+    // clang-format on
+  };
+};
 
 struct guest_file_mapping {
     const char *name;
@@ -210,7 +247,7 @@ void Dynarmic_context_1restore(t_context32 ctx);
 void Dynarmic_context_1save(t_context32 ctx);
 void Dynarmic_free(void *ctx);
 
-u64 LC32Dlsym(u32 guest_name);
+u64 LC32Dlsym(u32 guest_name, bool isFunction);
 u64 LC32GetHostObject(u32 guest_self, u32 guest_class, bool returnClass);
 u64 LC32GetHostSelector(u32 guest_selector);
 u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args);
@@ -218,17 +255,18 @@ u32 LC32HostToGuestCopyClassName(u32 guest_output, size_t length, u64 host_objec
 
 __END_DECLS
 
-#define U32_MASK (sizeof(u32)-1)
+#define U64_MASK (sizeof(u64)-1)
 // create a string in the guest stack pointer
 class DynarmicGuestStackString {
 public:
     ~DynarmicGuestStackString() {
-        threadHandle.jit->Regs()[ARM_REG_SP] += totalLen;
+        threadHandle.jit->Regs()[Reg::SP] += totalLen;
     }
 
     DynarmicGuestStackString(const char *hostPtr) {
-        totalLen = (strlen(hostPtr) + 1 + U32_MASK) &~ U32_MASK;
-        guestPtr = (threadHandle.jit->Regs()[ARM_REG_SP] -= totalLen);
+        // align to 8-byte
+        totalLen = (strlen(hostPtr) + 1 + U64_MASK) &~ U64_MASK;
+        guestPtr = (threadHandle.jit->Regs()[Reg::SP] -= totalLen);
         Dynarmic_mem_1write(guestPtr, totalLen, (char *)hostPtr);
     }
 
@@ -250,28 +288,27 @@ public:
     }
 
     // Initialize the wrapper with a given guest string pointer
-    DynarmicHostString(u32 guestPtr) : dirty{false}, guestPtr{guestPtr} {
+    DynarmicHostString(u32 guestPtr, u32 len = 0) : dirty{false}, guestPtr{guestPtr} {
          char *dest = (char *)get_memory(sharedHandle.memory, guestPtr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
          if(!dest) {
              abort();
          }
 
-         totalLen = strlen(dest);
+         totalLen = len ?: strlen(dest);
          u32 pageOff = guestPtr & DYN_PAGE_MASK;
          shouldFree = pageOff + totalLen >= DYN_PAGE_SIZE;
          if(!shouldFree) {
              hostPtr = dest;
          } else {
-             totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
-             for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
-                 char *page = get_memory_page(sharedHandle.memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
-                 if(!page) {
-                     abort();
-                 }
-                 size_t len = strlen(page);
-                 totalLen += len;
-                 if(len < DYN_PAGE_SIZE) {
-                     break;
+             // If a length is not given, calculate until we hit null terminator
+             if(!len) {
+                 totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
+                 for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
+                     char *page = get_memory_page(sharedHandle.memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+                     if(!page) abort();
+                     size_t len = strlen(page);
+                     totalLen += len;
+                     if(len < DYN_PAGE_SIZE) break;
                  }
              }
              hostPtr = (char *)malloc(totalLen + 1);

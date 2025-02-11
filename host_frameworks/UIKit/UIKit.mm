@@ -1,6 +1,6 @@
 @import Darwin;
 @import UIKit;
-#include "dynarmic.h"
+#include "bridge.h"
 
 /*
 symbol = r0 + r1 << 32
@@ -13,7 +13,7 @@ r3 = sp+4
 
 __BEGIN_DECLS
 
-int lc32_UIKit_UIApplicationMain(u32 r2, u32 r3, u32 sp) {
+int LC32_UIKit_UIApplicationMain(u32 r2, u32 r3, u32 sp) {
     int argc = r2;
     u32 guest_argv = r3;
     NSString *principalClassName = (id)sharedHandle.ucb->MemoryRead64(sp);

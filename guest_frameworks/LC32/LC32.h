@@ -1,30 +1,29 @@
-@import Foundation;
 @import ObjectiveC;
-@import UIKit;
-
-@interface UILayoutContainerView : UIView
-@end
-@interface UIDynamicColor : UIColor
-@end
-@interface UIDynamicSystemColor : UIDynamicColor
-@end
+#import <Foundation/Foundation.h>
+#import "UIKitPrivate.h"
 
 @interface NSObject(LC32)
 - (instancetype)initWithHostSelf:(uint64_t)host_self;
+- (void)bindHostSelf:(uint64_t)ptr;
 - (uint64_t)host_self;
 - (void)setHost_self:(uint64_t)ptr;
 @end
 
-extern uint64_t LC32Dlsym(const char *name);
+uint64_t LC32Dlsym(const char *name, BOOL isFunction);
+
 uint32_t LC32InvokeHostCRet32(uint64_t hostPtr, ...);
 
-// Returns an address pointing to either direct memory mapped to the guest, or copied in case its boundary is more than one guest page
-uint64_t LC32GuestToHostCString(const char *string);
+// Used to make guest call from host. r12 is guest function pointer. It then issues svc 1009 to halt itself to return execution back to the host
+uint64_t LC32InvokeGuestC();
 
-// Free the C string if it was copied 
+// Returns an address pointing to either direct memory mapped to the guest, or copied in case its boundary exceeds a guest page
+// TODO: For now, this should be read-only. There is currently no mechanism to flush the copied buffer back
+uint64_t LC32GuestToHostCString(const char *string, size_t length);
+
+// Free the C string if it was copied
 void LC32GuestToHostCStringFree(uint64_t string);
 
-// Vice versa: copy string from host to guest
+// Copy class name from host to guest
 uint32_t LC32HostToGuestCopyClassName(char *output, size_t length, uint64_t host_input);
 
 // Converts host class to guest class
@@ -36,7 +35,8 @@ id LC32HostToGuestObject(uint64_t host_object);
 // Returns host SEL address
 uint64_t LC32GetHostSelector(SEL selector);
 
-// Call objc_performSelector
+// Invoke host objc_msgSend. All arguments must be 64-bit aligned with an exception below:
+// If the most significant bit of selector is set, 2 additional uint32_t arguments are reserved for return struct pointer and size
 uint64_t LC32InvokeHostSelector(uint64_t object, uint64_t selector, ...);
 
 // Get the host class pointer. If returnClass is false, it returns [clsss alloc]

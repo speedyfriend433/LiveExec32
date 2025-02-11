@@ -1,13 +1,13 @@
-@import Foundation;
+#import "libdispatch.h"
 
-@implementation OS_object : NSObject
+@implementation OS_object
 @end
 
-@implementation OS_dispatch_object : NSObject
+@implementation OS_dispatch_object
 @end
 
-@implementation OS_dispatch_queue : NSObject
+@implementation OS_dispatch_queue
 @end
 
-@implementation OS_dispatch_queue_global : NSObject
+@implementation OS_dispatch_queue_global
 @end

@@ -1,16 +1,40 @@
 #import <Foundation/Foundation.h>
-#import <objc/runtime.h>
+#import <objc/message.h>
 #include <dlfcn.h>
 #include "32bit.h"
 #include "dynarmic.h"
 
+#define SEL_RETURN_STRUCT ((u64)1 << 63)
+
 __BEGIN_DECLS
 
-// arguments are spit into registers then stack pointer, while va_arg only saves to stack pointer, so confusing...
-id _objc_msgSend(u64 self, SEL _cmd, u64 arg2, u64 arg3, u64 arg4, u64 arg5, u64 arg6, u64 arg7, ...);
+typedef struct LC32_stret {
+    char *stretAddr;
+    u64 self; // or objc_super
+} LC32_stret;
+
+typedef struct LC32_SixDoubles {
+    double value[6];
+} TEMP_SixDoubles;
+
+void LC32_objc_msgSend_stret(/* LC32_stret stret, SEL sel, ... */);
+void LC32_objc_msgSendSuper_stret(/* LC32_stret stret, SEL sel, ... */);
+
+extern int __CFConstantStringClassReference[];
+
+@interface NSObject(LC32)
+- (void)setGuestClass:(BOOL)value;
+- (BOOL)isGuestClass;
+- (void)setGuest_self:(u32)ptr;
+- (u32)guest_self;
+@end
+
+// dummy function to get and set double registers. CGAffineTransform takes up to 6 doubles
+LC32_SixDoubles LC32GetDoubleRegisters();
+void LC32SetDoubleRegisters(double d0, double d1, double d2, double d3, double d4, double d5);
 
 u32 LC32HostToGuestCopyClassName(u32 guest_output, size_t length, u64 host_object);
-u64 LC32Dlsym(u32 guest_name);
+//u64 LC32Dlsym(u32 guest_name);
 u64 LC32GetHostObject(u32 guest_self, u32 guest_class, bool returnClass);
 u64 LC32GetHostSelector(u32 guest_selector);
 u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args);
