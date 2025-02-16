@@ -72,9 +72,69 @@ static const void *kHostSelf = &kHostSelf;
     assert(ptr != 0);
     return ptr;
 }
+
+- (instancetype)LC32_autorelease {
+    static uint64_t _host_cmd;
+    if(!_host_cmd) _host_cmd = LC32GetHostSelector(@selector(autorelease));
+    LC32InvokeHostSelector(self.host_self, _host_cmd);
+    return [self LC32_autorelease];
+}
+- (void)LC32_release {
+    static uint64_t _host_cmd;
+    if(!_host_cmd) _host_cmd = LC32GetHostSelector(@selector(release));
+    LC32InvokeHostSelector(self.host_self, _host_cmd);
+    [self LC32_release];
+}
+
+- (instancetype)LC32_retain {
+    static uint64_t _host_cmd;
+    if(!_host_cmd) _host_cmd = LC32GetHostSelector(@selector(retain));
+    LC32InvokeHostSelector(self.host_self, _host_cmd);
+    return [self LC32_retain];
+}
+
+// FIXME: need to hook this?
+- (NSUInteger)LC32_retainCount {
+    static uint64_t _host_cmd;
+    if(!_host_cmd) _host_cmd = LC32GetHostSelector(@selector(retainCount));
+    uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+    return (NSUInteger)host_ret;
+}
+
+#if 0
+// Can't hook this, host crashes with: Application circumvented Objective-C runtime dealloc initiation for <NSObject-like> object.
+- (void)dealloc {
+    static uint64_t _host_cmd;
+    if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd);
+    uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+    object_dispose(self);
+}
+#endif
 @end
 
+static void addMethodToClass(Class cls, Method method) {
+    class_addMethod(cls, method_getName(method), method_getImplementation(method), method_getTypeEncoding(method));
+}
+
+static void swizzle(Class cls, SEL originalAction, SEL swizzledAction) {
+    method_exchangeImplementations(class_getInstanceMethod(cls, originalAction), class_getInstanceMethod(cls, swizzledAction));
+}
+
 __attribute__((constructor)) void LC32FrameworkInit() {
+    // Ensure LC32HostObjectPointer doesn't inherit swizzled ARC methods
+    Class clsLC32HostObjectPointer = objc_getClass("LC32HostObjectPointer");
+    Class clsNSObject = objc_getClass("NSObject");
+    addMethodToClass(clsLC32HostObjectPointer, class_getInstanceMethod(clsNSObject, @selector(autorelease)));
+    addMethodToClass(clsLC32HostObjectPointer, class_getInstanceMethod(clsNSObject, @selector(release)));
+    addMethodToClass(clsLC32HostObjectPointer, class_getInstanceMethod(clsNSObject, @selector(retain)));
+    addMethodToClass(clsLC32HostObjectPointer, class_getInstanceMethod(clsNSObject, @selector(retainCount)));
+
+    // Swizzle ARC methods
+    swizzle(clsNSObject, @selector(autorelease), @selector(LC32_autorelease));
+    swizzle(clsNSObject, @selector(release), @selector(LC32_release));
+    swizzle(clsNSObject, @selector(retain), @selector(LC32_retain));
+    swizzle(clsNSObject, @selector(retainCount), @selector(LC32_retainCount));
+
     // Send dlsym and LC32InvokeGuestC pointers to the host
     LC32InvokeHostCRet32(LC32Dlsym("LC32SetInvokeGuestFuncPtr", YES), &dlsym, &LC32InvokeGuestC);
 }

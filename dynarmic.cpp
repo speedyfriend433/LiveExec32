@@ -38,7 +38,7 @@
 #include "32bit.h"
 
 
-#define IGNORE_BAD_MEM_ACCESS 0
+#define IGNORE_BAD_MEM_ACCESS 1
 #define TRACE_RW 0
 #define TRACE_BRANCH 0
 #define TRACE_SVC 0
@@ -189,6 +189,12 @@ int guest_getattrlist(u32 guest_path, u32 guest_attrList, u32 guest_attrBuf, siz
     return result;
 }
 
+int guest_shm_open(u32 guest_name, int oflag, int mode) {
+    DynarmicHostString host_name(guest_name);
+    printf("LC32: shm_open %s\n", host_name.hostPtr);
+    return syscallRetCarry(SYS_shm_open, host_name.hostPtr, oflag, mode);
+}
+
 int	 guest_pthread_getugid_np(u32 uid, u32 gid) {
     uid_t host_uid, host_gid;
     int result = pthread_getugid_np(&host_uid, &host_gid);
@@ -259,6 +265,36 @@ guest_mach_msg_trap(u32 guest_msg,
             Mess->Out.msgh_body.msgh_descriptor_count = 1;
             break;
         }
+        case DYLD_PROCESS_INFO_NOTIFY_LOAD_ID: {
+            const dyld_process_info_notify_header *Mess = (dyld_process_info_notify_header *)host_header;
+            const dyld_process_info_image_entry* entries = (dyld_process_info_image_entry*)((uintptr_t)Mess + Mess->imagesOffset);
+            uintptr_t stringPool = (uintptr_t)Mess + Mess->stringsOffset;
+            for(unsigned i=0; i < Mess->imageCount; ++i) {
+                u32 imageAddress = entries[i].loadAddress;
+                char *imagePath = (char *)(stringPool + entries[i].pathStringOffset);
+                // Find __TEXT size
+                struct segment_command *seg = (struct segment_command *)((uintptr_t)get_memory(imageAddress) + sizeof(struct mach_header));
+                while(seg->cmd != LC_SEGMENT || strcmp(seg->segname, SEG_TEXT) != 0){
+                    seg = (struct segment_command *)((uintptr_t)seg + seg->cmdsize);
+                }
+                guestMappings[guestMappingLen].name = strdup(basename(imagePath));
+                guestMappings[guestMappingLen].start = imageAddress;
+                guestMappings[guestMappingLen].end = imageAddress + seg->vmsize;
+                guestMappings[guestMappingLen].hostAddr = (uintptr_t)get_memory(imageAddress);
+                printf("LC32: added image %s (0x%08x-0x%08x)\n", guestMappings[guestMappingLen].name, guestMappings[guestMappingLen].start, guestMappings[guestMappingLen].end);
+                guestMappingLen++;
+            }
+            __attribute__((fallthrough));
+        }
+        case DYLD_PROCESS_INFO_NOTIFY_UNLOAD_ID:
+        case DYLD_PROCESS_INFO_NOTIFY_MAIN_ID: {
+            host_header->msgh_bits        = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND);
+            host_header->msgh_id          = 0;
+            host_header->msgh_local_port  = MACH_PORT_NULL;
+            host_header->msgh_reserved    = 0;
+            host_header->msgh_size        = sizeof(*host_header);
+            break;
+        }
         case 3409: {
             MACH_MSG_UNION(task_get_special_port, Mess);
             host_header->msgh_bits |= MACH_MSGH_BITS_COMPLEX;
@@ -294,6 +330,17 @@ guest_mach_msg_trap(u32 guest_msg,
             MACH_MSG_UNION(task_register_dyld_shared_cache_image_info, Mess);
             host_header->msgh_size = sizeof(Mess->Out);
             Mess->Out.RetCode = KERN_SUCCESS;
+            break;
+        }
+        case 78945670: {
+            MACH_MSG_UNION(_notify_server_register_check, Mess);
+            // this Mach trap is missing on arm64
+	         host_header->msgh_size = sizeof(Mess->Out);
+            Mess->Out.size = 0;
+            Mess->Out.slot = 0;
+            Mess->Out.token = 0;
+            Mess->Out.status = 0;
+            Mess->Out.RetCode = 0;
             break;
         }
         case 0x10000000: {
@@ -420,7 +467,7 @@ int guest_bsdthread_pthread_size;
 int guest_bsdthread_register(u32 guest_func_thread_start, u32 guest_func_start_wqthread, int pthread_size, u32 data, int32_t datasize, off_t offset) {
     guest_bsdthread_thread_start = guest_func_thread_start;
     guest_bsdthread_pthread_size = pthread_size;
-    return 0;
+    return return_with_carry(PTHREAD_FEATURE_FINEPRIO | PTHREAD_FEATURE_BSDTHREADCTL | PTHREAD_FEATURE_SETSELF | PTHREAD_FEATURE_QOS_MAINTENANCE | PTHREAD_FEATURE_QOS_DEFAULT, false);
 }
 
 int guest_sandbox_ms(u32 guest_policyname, int call, u32 guest_arg) {
@@ -539,6 +586,18 @@ int guest_unlink(u32 guest_path) {
     char host_path[PATH_MAX];
     sharedHandle.fs->pathGuestToHost(guest_path, host_path);
     return syscallRetCarry(SYS_unlink, host_path, 0,0,0,0,0,0);
+}
+
+int guest_chmod(u32 guest_path, mode_t mode) {
+    char host_path[PATH_MAX];
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
+    return syscallRetCarry(SYS_chmod, host_path, mode, 0,0,0,0,0);
+}
+
+int guest_chown(u32 guest_path, uid_t owner, gid_t group) {
+    char host_path[PATH_MAX];
+    sharedHandle.fs->pathGuestToHost(guest_path, host_path);
+    return syscallRetCarry(SYS_chown, host_path, owner, group, 0,0,0,0);
 }
 
 int guest_access(u32 guest_path, int mode) {
@@ -695,6 +754,11 @@ int guest_proc_info(int callnum, int pid, int flavor, uint64_t arg, u32 guest_bu
     // FIXME: check buffer size
     char *host_buffer = (char *)malloc(buffersize);
     int result = syscallRetCarry(SYS_proc_info, callnum, pid, flavor, arg, host_buffer, buffersize, 0);
+    if(callnum == 2 && flavor == PROC_PIDT_SHORTBSDINFO) {
+        proc_bsdshortinfo *info = (proc_bsdshortinfo *)host_buffer;
+        info->pbsi_flags |= 2; // set PROC_FLAG_TRACED. FIXME: without this, it will crash
+        info->pbsi_flags &= ~0x10; // unset PROC_FLAG_LP64
+    }
     Dynarmic_mem_1write(guest_buffer, buffersize, host_buffer);
     free(host_buffer);
     return result;
@@ -752,6 +816,13 @@ kern_return_t guest__kernelrpc_mach_port_construct_trap(mach_port_name_t target,
     return result;
 }
 
+kern_return_t guest__kernelrpc_mach_port_allocate_trap(mach_port_name_t target, mach_port_right_t right, u32 guest_name) {
+    mach_port_name_t host_name;
+    kern_return_t result = _kernelrpc_mach_port_allocate_trap(target, right, &host_name);
+    sharedHandle.ucb->MemoryWrite32(guest_name, host_name);
+    return result;
+}
+
 kern_return_t guest__kernelrpc_mach_vm_map_trap(mach_port_name_t target, u32 guest_address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_prot_t cur_protection) {
     // TODO: verify and round mask accordingly
     if (target != mach_task_self()) {
@@ -785,7 +856,7 @@ int guest_abort_with_payload(u32 reason_namespace, u64 reason_code, u32 guest_pa
 
 ////////
 int guestMappingLen = 0;
-guest_file_mapping guestMappings[100];
+guest_file_mapping guestMappings[1000];
 
 static void load_symbols_for_image(guest_file_mapping *mapping, void(^iterator)(u32 address, const char *name)) {
   u32 slide = mapping->start; // FIXME: properly calculate this slide
@@ -821,18 +892,44 @@ static void load_symbols_for_image(guest_file_mapping *mapping, void(^iterator)(
   }
 
   // Find base symbol/string table addresses
+  // FIXME: symbol resolution for dyld shared cache
+#if 1
+  struct nlist *host_symtab = (struct nlist *)((uintptr_t)header + symtab_cmd->symoff);
+  u64 host_strtab = (u32)((uintptr_t)header + symtab_cmd->stroff);
+
+  struct nlist *symtab = (struct nlist *)(mapping->start + symtab_cmd->symoff);
+  u32 strtab = (u32)(mapping->start + symtab_cmd->stroff);
+  iterator(mapping->start, "(unknown symbol)");
+  if(!get_memory(strtab)) {
+    return;
+  }
+
+  for(int i=0; i < symtab_cmd->nsyms; i++) {
+    u32 addr = strtab + sharedHandle.ucb->MemoryRead32((u32)(u64)&symtab[i].n_un.n_strx);
+    //u32 host_addr = host_strtab +
+    if(!get_memory(addr)) continue;
+    u64 symbolAddr = sharedHandle.ucb->MemoryRead32((u32)(u64)&symtab[i].n_value) + slide;
+    u64 hostSymbolAddr = host_symtab[i].n_value + slide;
+    DynarmicHostString host_sym(addr);
+    if(*host_sym.hostPtr) {
+      iterator(symbolAddr, (const char *)host_sym.hostPtr);
+    } else {
+      iterator(symbolAddr, (const char *)symbolAddr);
+    }
+  }
+#else
   struct nlist *symtab = (struct nlist *)((uintptr_t)header + symtab_cmd->symoff);
   char *strtab = (char *)((uintptr_t)header + symtab_cmd->stroff);
-
   for(int i=0; i < symtab_cmd->nsyms; i++) {
     iterator(symtab[i].n_value + slide, (const char *)(strtab + symtab[i].n_un.n_strx));
   }
+#endif
 }
 
 void symbolicate_call_stack(symbolicated_call *callStack, int callStackLen) {
   for (int n = 0; n < guestMappingLen; n++) {
     load_symbols_for_image(&guestMappings[n], ^(u32 address, const char *name){
-      //printf("[0x%08x-0x%08x] %s`%s\n", start, end, guestMappings[n].name, name);
+      //printf("[0x%08x-0x%08x] %s`%s\n", address, guestMappings[n].name, name);
       for (int i = 0; i < callStackLen; i++) {
         if (callStack[i].address >= address && (!callStack[i].symbolName || callStack[i].address - address < callStack[i].symbolOffset)) {
           //printf("0x%08x [0x%08x-0x%08x]\n", callStack[i].address, start, end);
@@ -845,7 +942,10 @@ void symbolicate_call_stack(symbolicated_call *callStack, int callStackLen) {
   }
 }
 
-char *get_memory_page(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table) {
+char *get_memory_page(u64 vaddr) {
+    size_t num_page_table_entries = sharedHandle.num_page_table_entries;
+    void **page_table = sharedHandle.page_table;
+    khash_t(memory) *memory = sharedHandle.memory;
     u64 idx = vaddr >> DYN_PAGE_BITS;
     if(page_table && idx < num_page_table_entries) {
       return (char *)page_table[idx];
@@ -859,8 +959,8 @@ char *get_memory_page(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_
     return (char *)page->addr;
 }
 
-inline void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table) {
-    char *page = get_memory_page(memory, vaddr, num_page_table_entries, page_table);
+inline void *get_memory(u64 vaddr) {
+    char *page = get_memory_page(vaddr);
     return page ? &page[vaddr & DYN_PAGE_MASK] : NULL;
 }
 
@@ -907,7 +1007,7 @@ public:
     }
 
     u8 MemoryRead8(u32 vaddr) override {
-        u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u8 *dest = (u8 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: read08(0x%04x) = 0x%01x\n", vaddr, dest[0]);
@@ -925,7 +1025,7 @@ public:
             const u8 b{MemoryRead8(vaddr + sizeof(u8))};
             return (static_cast<u16>(b) << 8) | a;
         }
-        u16 *dest = (u16 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u16 *dest = (u16 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             if (trace)
@@ -952,7 +1052,7 @@ public:
             const u16 b{MemoryRead16(vaddr + sizeof(u16))};
             return (static_cast<u32>(b) << 16) | a;
         }
-        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u32 *dest = (u32 *) get_memory(vaddr);
         if(dest) {
             //printf("MemoryRead32[%s->%s:%d]: vaddr=0x%x, value=0x%x\n", __FILE__, __func__, __LINE__, vaddr, dest[0]);
 #if TRACE_RW
@@ -980,7 +1080,7 @@ public:
             const u32 b{MemoryRead32(vaddr + sizeof(u32))};
             return (static_cast<u64>(b) << 32) | a;
         }
-        u64 *dest = (u64 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u64 *dest = (u64 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: read64(0x%04x) = 0x%08llx\n", vaddr, dest[0]);
@@ -994,7 +1094,7 @@ public:
     }
 
     void MemoryWrite8(u32 vaddr, u8 value) override {
-        u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u8 *dest = (u8 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: write08(0x%04x) = 0x%01x\n", vaddr, value);
@@ -1011,7 +1111,7 @@ public:
             MemoryWrite8(vaddr + sizeof(u8), static_cast<u8>(value >> 8));
             return;
         }
-        u16 *dest = (u16 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u16 *dest = (u16 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: write16(0x%04x) = 0x%02x\n", vaddr, value);
@@ -1028,7 +1128,7 @@ public:
             MemoryWrite16(vaddr + sizeof(u16), static_cast<u16>(value >> 16));
             return;
         }
-        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u32 *dest = (u32 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: write32(0x%04x) = 0x%04x\n", vaddr, value);
@@ -1045,7 +1145,7 @@ public:
             MemoryWrite32(vaddr + sizeof(u32), static_cast<u32>(value >> 32));
             return;
         }
-        u64 *dest = (u64 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        u64 *dest = (u64 *) get_memory(vaddr);
         if(dest) {
 #if TRACE_RW
             printf("Trace: write64(0x%04x) = 0x%08llx\n", vaddr, value);
@@ -1235,6 +1335,7 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
             case -28: // task_self_trap
             case -27: // thread_self_trap
             case -26: // mach_reply_port
+            case -21: // _kernelrpc_mach_port_insert_right_trap
             case -19: // _kernelrpc_mach_port_mod_refs_trap
             case SYS_close: // 6
             case SYS_getpid: // 20
@@ -1276,6 +1377,9 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
             case -24:
                 cpu->Regs()[0] = guest__kernelrpc_mach_port_construct_trap(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2] | ((u64)cpu->Regs()[3] << 32), cpu->Regs()[4]);
                 break;
+            case -16: // _kernelrpc_mach_port_allocate_trap
+                cpu->Regs()[0] = guest__kernelrpc_mach_port_allocate_trap(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2]);
+                break;
             case -15:
                 // NOTE: skip r7 since it's frame pointer
                 cpu->Regs()[0] = guest__kernelrpc_mach_vm_map_trap(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2] | ((u64)cpu->Regs()[3] << 32), cpu->Regs()[4] | ((u64)cpu->Regs()[5] << 32), cpu->Regs()[6], cpu->Regs()[8]);
@@ -1316,6 +1420,12 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             case SYS_unlink: // 10
                 cpu->Regs()[0] = guest_unlink(cpu->Regs()[0]);
+                break;
+            case SYS_chmod: // 15
+                cpu->Regs()[0] = guest_chmod(cpu->Regs()[0], cpu->Regs()[1]);
+                break;
+            case SYS_chown: // 16
+                cpu->Regs()[0] = guest_chown(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2]);
                 break;
             case 33:
                 cpu->Regs()[0] = guest_access(cpu->Regs()[0], cpu->Regs()[1]);
@@ -1379,6 +1489,9 @@ BE CAREFUL WHEN MOVING SYSCALL. Checklist:
                 break;
             case 220:
                 cpu->Regs()[0] = guest_getattrlist(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2], cpu->Regs()[3], cpu->Regs()[4]);
+                break;
+            case 266:
+                cpu->Regs()[0] = guest_shm_open(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2]);
                 break;
             case 274:
                 cpu->Regs()[0] = guest___sysctlbyname(cpu->Regs()[0], cpu->Regs()[1], cpu->Regs()[2], cpu->Regs()[3], cpu->Regs()[4], cpu->Regs()[5]);
@@ -1818,19 +1931,6 @@ u32 Dynarmic_mmap(u32 address, u32 size, int protection, int flags, int fildes, 
     protection |= PROT_WRITE;
     flags |= MAP_PRIVATE;
     flags &= ~MAP_SHARED;
-    //printf("DETECTED mapping TEXT\n");
-    char filePath[PATH_MAX];
-    struct stat file_info;
-    fcntl(fildes, F_GETPATH, filePath);
-    fstat(fildes, &file_info);
-    size_t filesize = ALIGN_SIZE(file_info.st_size);
-
-    guestMappings[guestMappingLen].name = strdup(basename(filePath));
-    guestMappings[guestMappingLen].start = address;
-    guestMappings[guestMappingLen].end = address + size; // we only need __TEXT region
-    guestMappings[guestMappingLen].hostAddr = (uintptr_t)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fildes, 0);
-    printf("LC32: added image %s (0x%08x-0x%08x)\n", guestMappings[guestMappingLen].name, guestMappings[guestMappingLen].start, guestMappings[guestMappingLen].end);
-    guestMappingLen++;
   }
 
   off_t aligned_off = off & ~(PAGE_SIZE-1);
@@ -1889,13 +1989,12 @@ int Dynarmic_mprotect(u64 address, u64 size, int perms) {
  * Signature: (JJ[B)I
  */
 int Dynarmic_mem_1write(u64 address, u64 size, char* src) {
-  khash_t(memory) *memory = sharedHandle.memory;
   u64 vaddr_end = address + size;
   for(u64 vaddr = address & ~DYN_PAGE_MASK; vaddr < vaddr_end; vaddr += DYN_PAGE_SIZE) {
     u64 start = vaddr < address ? address - vaddr : 0;
     u64 end = vaddr + DYN_PAGE_SIZE <= vaddr_end ? DYN_PAGE_SIZE : (vaddr_end - vaddr);
     u64 len = end - start;
-    char *addr = get_memory_page(memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+    char *addr = get_memory_page(vaddr);
     if(addr == NULL) {
       fprintf(stderr, "mem_write failed[%s->%s:%d]: vaddr=%p\n", __FILE__, __func__, __LINE__, (void*)vaddr);
       return 1;
@@ -1914,13 +2013,12 @@ int Dynarmic_mem_1write(u64 address, u64 size, char* src) {
  * Signature: (JJI)[B
  */
 int Dynarmic_mem_1read(u64 address, u64 size, char* dest) {
-  khash_t(memory) *memory = sharedHandle.memory;
   u64 vaddr_end = address + size;
   for(u64 vaddr = address & ~DYN_PAGE_MASK; vaddr < vaddr_end; vaddr += DYN_PAGE_SIZE) {
     u64 start = vaddr < address ? address - vaddr : 0;
     u64 end = vaddr + DYN_PAGE_SIZE <= vaddr_end ? DYN_PAGE_SIZE : (vaddr_end - vaddr);
     u64 len = end - start;
-    char *addr = get_memory_page(memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+    char *addr = get_memory_page(vaddr);
     if(addr == NULL) {
       fprintf(stderr, "mem_read failed[%s->%s:%d]: vaddr=%p\n", __FILE__, __func__, __LINE__, (void*)vaddr);
       return 1;

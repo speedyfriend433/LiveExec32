@@ -2,7 +2,38 @@
 #include <mach/mach_time.h>
 #include <mach/mach_traps.h>
 
-extern "C" {
+__BEGIN_DECLS
+
+#define PTHREAD_FEATURE_DISPATCHFUNC	0x01		/* same as WQOPS_QUEUE_NEWSPISUPP, checks for dispatch function support */
+#define PTHREAD_FEATURE_FINEPRIO		0x02		/* are fine grained prioirities available */
+#define PTHREAD_FEATURE_BSDTHREADCTL	0x04		/* is the bsdthread_ctl syscall available */
+#define PTHREAD_FEATURE_SETSELF			0x08		/* is the BSDTHREAD_CTL_SET_SELF command of bsdthread_ctl available */
+#define PTHREAD_FEATURE_QOS_MAINTENANCE	0x10		/* is QOS_CLASS_MAINTENANCE available */
+#define PTHREAD_FEATURE_RESERVED		0x20		/* burnt, shipped in OSX 10.11 & iOS 9 with partial kevent delivery support */
+#define PTHREAD_FEATURE_KEVENT          0x40		/* supports direct kevent delivery */
+#define PTHREAD_FEATURE_WORKLOOP          0x80		/* supports workloops */
+#define PTHREAD_FEATURE_QOS_DEFAULT		0x40000000	/* the kernel supports QOS_CLASS_DEFAULT */
+
+// Others
+
+#define PROC_PIDT_SHORTBSDINFO		13
+#define PROC_PIDT_SHORTBSDINFO_SIZE	(sizeof(struct proc_bsdshortinfo))
+
+struct proc_bsdshortinfo {
+	uint32_t                pbsi_pid;		/* process id */
+	uint32_t                pbsi_ppid;		/* process parent id */
+	uint32_t                pbsi_pgid;		/* process perp id */
+	uint32_t                pbsi_status;		/* p_stat value, SZOMB, SRUN, etc */
+	char                    pbsi_comm[MAXCOMLEN];	/* upto 16 characters of process name */
+	uint32_t                pbsi_flags;              /* 64bit; emulated etc */
+	uid_t                   pbsi_uid;		/* current uid on process */
+	gid_t                   pbsi_gid;		/* current gid on process */
+	uid_t                   pbsi_ruid;		/* current ruid on process */
+	gid_t                   pbsi_rgid;		/* current tgid on process */
+	uid_t                   pbsi_svuid;		/* current svuid on process */
+	gid_t                   pbsi_svgid;		/* current svgid on process */
+	uint32_t                pbsi_rfu;		/* reserved for future use*/
+};
 
 struct iovec_32 {
     uint32_t guest_iov_base;  /* Base address. */
@@ -19,6 +50,8 @@ struct crashreporter_annotations_t {
 	uint64_t dialog_mode;		// unsigned int
 };
 
+// Mach private
+
 #ifdef  __MigPackStructs
 #pragma pack(push, 4)
 #endif
@@ -32,6 +65,24 @@ typedef struct {
 	NDR_record_t NDR;
 	kern_return_t RetCode;
 } __Reply___xpc_send_serializer_t __attribute__((unused));
+
+typedef struct {
+	mach_msg_header_t Head;
+	mach_msg_body_t msgh_body;
+	mach_msg_ool_descriptor_t name;
+	NDR_record_t NDR;
+	mach_msg_type_number_t nameCnt;
+} __Request___notify_server_register_check_t __attribute__((unused));
+
+typedef struct {
+	mach_msg_header_t Head;
+	NDR_record_t NDR;
+	kern_return_t RetCode;
+	int size;
+	int slot;
+	int token;
+	int status;
+} __Reply___notify_server_register_check_t __attribute__((unused));
 #ifdef  __MigPackStructs
 #pragma pack(pop)
 #endif
@@ -281,4 +332,4 @@ size_t __getdirentries64(int fd, void *buf, size_t bufsize, __darwin_off_t *base
 
 int getentropy(void *buffer, size_t length);
 
-}
+__END_DECLS

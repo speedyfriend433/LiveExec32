@@ -1,6 +1,5 @@
 @import ObjectiveC;
 #import <Foundation/Foundation.h>
-#import "UIKitPrivate.h"
 
 @interface NSObject(LC32)
 - (instancetype)initWithHostSelf:(uint64_t)host_self;

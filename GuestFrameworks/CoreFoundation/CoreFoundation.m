@@ -1,5 +1,5 @@
 #import <LC32/LC32.h>
-#import "CoreFoundation+LC32.h"
+#import <CoreFoundation/CoreFoundation+LC32.h>
 
 const CFAllocatorRef kCFAllocatorDefault = NULL;
 

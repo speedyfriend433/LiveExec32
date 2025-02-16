@@ -1,6 +1,9 @@
-#import "Foundation+LC32.h"
+#import <Foundation/Foundation+LC32.h>
 
 @implementation NSPlaceholderString : NSString
+@end
+
+@implementation NSTaggedPointerString : NSString
 @end
 
 void NSLog(NSString *format, ...) {
@@ -15,4 +18,10 @@ Class NSClassFromString(NSString *aClassName) {
 
 NSString *NSStringFromClass(Class aClass) {
     return @(class_getName(aClass));
+}
+
+NSString *NSTemporaryDirectory() {
+    static uint64_t hostPtr = 0;
+    if(!hostPtr) hostPtr = LC32Dlsym("LC32_Foundation_NSTemporaryDirectory", YES);
+    return (NSString *)LC32InvokeHostCRet32(hostPtr);
 }

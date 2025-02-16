@@ -16,6 +16,7 @@
 
 #include "khash.h"
 #include "filesystem.h"
+#include "32bit.h"
 
 // TSB (thread local variables)
 #define ARM_REG_C13_C0_3 113
@@ -30,6 +31,10 @@
 
 #define ALIGN_DYN_SIZE(len) (((DYN_PAGE_SIZE-1)&len) ? ((len+DYN_PAGE_SIZE) & ~(DYN_PAGE_SIZE-1)):len)
 #define ALIGN_SIZE(len) (((PAGE_SIZE-1)&len) ? ((len+PAGE_SIZE) & ~(PAGE_SIZE-1)):len)
+
+#define DYLD_PROCESS_INFO_NOTIFY_LOAD_ID 0x1000
+#define DYLD_PROCESS_INFO_NOTIFY_UNLOAD_ID 0x2000
+#define DYLD_PROCESS_INFO_NOTIFY_MAIN_ID 0x3000
 
 // cpsr flags
 #define A32_BIT 4
@@ -91,7 +96,7 @@ struct guest_file_mapping {
     uint32_t end;
 };
 extern int guestMappingLen;
-extern guest_file_mapping guestMappings[100];
+extern guest_file_mapping guestMappings[1000];
 
 typedef struct memory_page {
   void *addr;
@@ -213,6 +218,7 @@ typedef struct {
   Dynarmic::ExclusiveMonitor *monitor;
   LC32Filesystem *fs;
   u32 guest_dlsym, guest_LC32InvokeGuestC;
+  dyld_all_image_infos_32 *dyld_info_section;
 } dynarmic;
 
 typedef struct {
@@ -224,8 +230,8 @@ typedef struct {
 extern dynarmic sharedHandle;
 extern __thread dynarmic_thread threadHandle;
 
-char *get_memory_page(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table);
-void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_page_table_entries, void **page_table);
+char *get_memory_page(u64 vaddr);
+void *get_memory(u64 vaddr);
 
 bool Dynarmic_nativeInitialize();
 void Dynarmic_nativeDestroy();
@@ -289,7 +295,7 @@ public:
 
     // Initialize the wrapper with a given guest string pointer
     DynarmicHostString(u32 guestPtr, u32 len = 0) : dirty{false}, guestPtr{guestPtr} {
-         char *dest = (char *)get_memory(sharedHandle.memory, guestPtr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+         char *dest = (char *)get_memory(guestPtr);
          if(!dest) {
              abort();
          }
@@ -304,7 +310,7 @@ public:
              if(!len) {
                  totalLen = DYN_PAGE_SIZE - pageOff; // avoid page overflow
                  for(u64 vaddr = (guestPtr - pageOff) + DYN_PAGE_SIZE;; vaddr += DYN_PAGE_SIZE) {
-                     char *page = get_memory_page(sharedHandle.memory, vaddr, sharedHandle.num_page_table_entries, sharedHandle.page_table);
+                     char *page = get_memory_page(vaddr);
                      if(!page) abort();
                      size_t len = strlen(page);
                      totalLen += len;

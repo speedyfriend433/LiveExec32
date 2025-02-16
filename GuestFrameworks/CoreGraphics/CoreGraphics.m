@@ -73,7 +73,7 @@ void CGPathRelease(CGPathRef cg_nullable path) {
     if(!hostPtr) hostPtr = LC32Dlsym("CGPathRelease", YES);
     LC32InvokeHostCRet32(hostPtr, [(id)path host_self]);
     // FIXME: does this cause double-free in host?
-    [(id)path release];
+    CFRelease(path);
 }
 
 const CGPoint CGPointZero = {0,0};

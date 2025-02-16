@@ -1,9 +1,62 @@
+#pragma once
+
+#include <mach/task.h>
 #include <sys/signal.h>
 #include <sys/stat.h>
 
-//#define __darwin_time_t int
-//#define long int
+// dyld
+#define DYLD_PROCESS_INFO_NOTIFY_LOAD_ID                        0x1000
+#define DYLD_PROCESS_INFO_NOTIFY_UNLOAD_ID                      0x2000
+#define DYLD_PROCESS_INFO_NOTIFY_MAIN_ID                        0x3000
 
+struct dyld_all_image_infos_32 {
+    uint32_t        version;
+    uint32_t        infoArrayCount;
+    uint32_t        infoArray;
+    uint32_t        notification;
+    bool            processDetachedFromSharedRegion;
+    bool            libSystemInitialized;
+    uint32_t        dyldImageLoadAddress;
+    uint32_t        jitInfo;
+    uint32_t        dyldVersion;
+    uint32_t        errorMessage;
+    uint32_t        terminationFlags;
+    uint32_t        coreSymbolicationShmPage;
+    uint32_t        systemOrderFlag;
+    uint32_t        uuidArrayCount;
+    uint32_t        uuidArray;
+    uint32_t        dyldAllImageInfosAddress;
+    uint32_t        initialImageCount;
+    uint32_t        errorKind;
+    uint32_t        errorClientOfDylibPath;
+    uint32_t        errorTargetDylibPath;
+    uint32_t        errorSymbol;
+    uint32_t        sharedCacheSlide;
+    uint8_t         sharedCacheUUID[16];
+    uint32_t        sharedCacheBaseAddress;
+    uint64_t        infoArrayChangeTimestamp;
+    uint32_t        dyldPath;
+    uint32_t        notifyMachPorts[2];
+    uint32_t        reserved[11];
+};
+
+struct dyld_process_info_image_entry {
+    uuid_t                                              uuid;
+    uint64_t                    loadAddress;
+    uint32_t                    pathStringOffset;
+    uint32_t                    pathLength;
+};
+
+struct dyld_process_info_notify_header {
+    mach_msg_header_t                       header;
+    uint32_t                    version;
+    uint32_t                    imageCount;
+    uint32_t                    imagesOffset;
+    uint32_t                    stringsOffset;
+    uint64_t                    timestamp;
+};
+
+// Others
 struct objc_method_32 {
     uint32_t method_name;
     uint32_t method_types;

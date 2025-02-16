@@ -45,6 +45,7 @@ bool LC32Filesystem::pathLeftToRight(vector<string> leftVec, vector<string> righ
 }
 
 bool LC32Filesystem::pathGuestToHost(char *input, char *output) {
+    // FIXME: resolving guest symlink (eg /tmp -> /private/var/tmp -> (host)/tmp)
     if(input[0] != '/') {
         // relative path is more complex as we have to prepend cwd then translate the path back and forth
         char guestCWD[PATH_MAX];

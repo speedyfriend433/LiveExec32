@@ -3,6 +3,8 @@
 
 const NSString *UIApplicationStatusBarHeightChangedNotification = @"UIApplicationStatusBarHeightChangedNotification";
 
+const UIEdgeInsets UIEdgeInsetsZero = {0,0,0,0};
+
 int UIApplicationMain(int argc, char * argv[], NSString *
 principalClassName, NSString *delegateClassName) {
     static uint64_t hostPtr = 0;

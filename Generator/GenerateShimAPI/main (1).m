@@ -386,6 +386,13 @@
     return self;
 }
 
+- (instancetype)initWithClassDictionary:(NSDictionary *)dict {
+    self = [super init];
+    self.methods = [NSMutableDictionary new];
+
+    
+}
+
 - (void)validateAndAddMethod:(Method)objcMethod isInstanceMethod:(BOOL)isInstanceMethod {
     SEL selector = method_getName(objcMethod);
     const char *selectorName = sel_getName(selector);
@@ -455,6 +462,19 @@ int main(int argc, char **argv) {
 */
     dlopen("/var/jb/usr/lib/TweakInject/libFLEX.dylib", RTLD_GLOBAL);
 
+    chdir(NSBundle.mainBundle.bundlePath.UTF8String);
+    NSDictionary *frameworks = [NSDictionary dictionaryWithContentsOfFile:@"../templates/generated.plist"];
+    for(NSString *framework in frameworks) {
+        NSString *outPath = [NSString stringWithFormat:@"../../GuestFrameworks/%@", framework];
+        [NSFileManager.defaultManager createDirectoryAtPath:outPath withIntermediateDirectories:YES attributes:@{} error:nil];
+
+        NSDictionary *classes = frameworks[framework];
+        for(NSString *cls in classes) {
+            ClassBuilder *classContent = [[ClassBuilder alloc] initWithClassDictionary:classes[cls]];
+            [classContent.description writeToFile:[outPath stringByAppendingFormat:@"/%@.m", cls] atomically:YES];
+        }
+    }
+
     NSArray<Class> *classes = @[
         CABasicAnimation.class, CAKeyframeAnimation.class, CAPropertyAnimation.class, CAAnimation.class, CALayer.class, CAMediaTimingFunction.class, CATransaction.class,
         NSArray.class, NSMutableArray.class, NSAssertionHandler.class, NSAutoreleasePool.class, NSBundle.class, NSData.class, NSDate.class, NSDictionary.class, NSException.class, NSFileManager.class, NSLock.class, NSMutableArray.class, NSMutableArray.class, NSMutableDictionary.class, NSMutableString.class, NSNull.class, NSNumber.class, NSString.class, NSThread.class, NSTimer.class, NSURL.class, NSUserDefaults.class, NSValue.class,
@@ -463,7 +483,7 @@ int main(int argc, char **argv) {
     for(Class cls in classes) {
         printf("Generating for %s\n", class_getName(cls));
         ClassBuilder *classContent = [[ClassBuilder alloc] initWithClass:cls];
-        NSString *path = [NSString stringWithFormat:@"/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/LiveExec32/guest_frameworks/%@/%@.m", classContent.imagePath.lastPathComponent, NSStringFromClass(cls)];
+        NSString *path = [NSString stringWithFormat:@"/var/mobile/Documents/TrollExperiments/CProjects/dynarmic/LiveExec32/GuestFrameworks/%@/%@.m", classContent.imagePath.lastPathComponent, NSStringFromClass(cls)];
         [NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:@{} error:nil];
         [classContent.description writeToFile:path atomically:YES];
     }

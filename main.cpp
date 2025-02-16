@@ -13,6 +13,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <mach-o/fat.h>
+#include <mach-o/getsect.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
 #include <mach-o/reloc.h>
@@ -123,8 +124,15 @@ u32 Dynarmic_map_file(bool isDyld, u32 target, const char *path) {
       threadHandle.jit->SetCpsr(state->__cpsr);
     }
   }
-  u32 addr = guestMappings[guestMappingLen].start;
 
+  if(isDyld) {
+    u32 dyldInfoSize;
+    sharedHandle.dyld_info_section = (dyld_all_image_infos_32 *)((uintptr_t)getsectdatafromheader(header, SEG_DATA, "__all_image_info", &dyldInfoSize) + map);
+    // register a fake Mach port which is used to notify us about loading/unloading Mach-O libraries
+    sharedHandle.dyld_info_section->notifyMachPorts[0] = -1;
+  }
+
+  u32 addr = guestMappings[guestMappingLen].start;
   guestMappingLen++;
   return addr;
 }
@@ -170,9 +178,10 @@ int main(int argc, char* argv[], char* envp[]) {
     chroot(rootPath);
     chdir("/");
   } else {
-    //sharedHandle.fs->addMountpoint("/rootfs", rootPath);
+    //sharedHandle.fs->addMountpoint("/rootfs", "/");
     sharedHandle.fs->addMountpoint("/", rootPath);
     sharedHandle.fs->addMountpoint("/dev", "/dev");
+    sharedHandle.fs->addMountpoint("/private/var/tmp", "/private/var/tmp");
   }
 
   // commpage 0xffff4000+0x1000

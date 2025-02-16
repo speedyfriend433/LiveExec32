@@ -1,5 +1,6 @@
 @import Darwin;
 @import Foundation;
+#include <asl.h>
 
 __attribute__((constructor)) void logToFileIfNeeded() {
     // Don't log in CLI
@@ -37,7 +38,7 @@ __attribute__((constructor)) void logToFileIfNeeded() {
             if (rsize < 2048) {
                 buf[rsize] = '\0';
             }
-            int index;
+            asl_log(NULL, NULL, ASL_LEVEL_ERR, "%s", buf);
             [file writeData:[NSData dataWithBytes:buf length:rsize]];
             [file synchronizeFile];
         }
