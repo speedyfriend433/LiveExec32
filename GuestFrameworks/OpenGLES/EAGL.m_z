@@ -1,0 +1,41 @@
+@import OpenGLES
+
+void EAGLGetVersion(unsigned int* major, unsigned int* minor) {
+    if(major) *major = 1;
+    if(minor) *minor = 0;
+}
+
+@implementation EAGLSharegroup
+
+@property (nullable, copy, nonatomic) NSString* debugLabel NS_AVAILABLE_IOS(6_0);
+
+@end
+
+@implementation EAGLContext
+
+- (nullable instancetype) init {
+    abort(); // NS_UNAVAILABLE
+}
+
+- (nullable instancetype) initWithAPI:(EAGLRenderingAPI) api {
+    return [self initWithAPI:sharegroup:nil];
+}
+
+- (nullable instancetype) initWithAPI:(EAGLRenderingAPI) api sharegroup:(EAGLSharegroup*) sharegroup {
+     
+}
+
++ (BOOL)                     setCurrentContext:(nullable EAGLContext*) context;
++ (nullable EAGLContext*)    currentContext;
+
+@property (readonly)          EAGLRenderingAPI   API;
+@property (nonnull, readonly) EAGLSharegroup*    sharegroup;
+
+@property (nullable, copy, nonatomic) NSString* debugLabel NS_AVAILABLE_IOS(6_0);
+@property (getter=isMultiThreaded, nonatomic) BOOL multiThreaded NS_AVAILABLE_IOS(7_1);
+@end
+
+NS_ASSUME_NONNULL_END
+
+#endif /* _EAGL_H_ */
+

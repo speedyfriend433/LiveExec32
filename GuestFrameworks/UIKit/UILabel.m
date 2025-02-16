@@ -1,0 +1,828 @@
+// Generated file
+#if __has_include(<UIKit/UIKit+LC32.h>)
+#import <UIKit/UIKit+LC32.h>
+#else
+#import <UIKit/UIKit.h>
+#endif
+#import <LC32/LC32.h>
+#import <CoreGraphics/CoreGraphics+LC32.h>
+#import <UIKit/UIKit+LC32.h>
+@implementation UILabel
+- (int)numberOfLines {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (int)host_ret;
+}
+
++ (Class)layerClass {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (float)minimumScaleFactor {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (float)host_ret;
+}
+
+- (void)setBackgroundColor:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (uint64_t)defaultAccessibilityTraits {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (uint64_t)host_ret;
+}
+
+- (void)setColor:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setNeedsDisplay {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  // return void
+}
+
+- (CGSize)sizeThatFits:(CGSize)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGSize_64 host_arg0 = LC32HostCGSize(guest_arg0); 
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret), host_arg0);
+  // No post-process for guest_arg0 
+  return LC32GuestCGSize(host_ret);
+}
+
+- (void)setRawSize:(CGSize)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGSize_64 host_arg0 = LC32HostCGSize(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)tintColorDidChange {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  // return void
+}
+
+- (void)setBounds:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (CGSize)textSizeForWidth:(float)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  double host_arg0 = (double)guest_arg0; 
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret), host_arg0);
+  // No post-process for guest_arg0 
+  return LC32GuestCGSize(host_ret);
+}
+
+- (CGRect)textRectForBounds:(CGRect)guest_arg0 limitedToNumberOfLines:(int)guest_arg1 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_arg1 = (uint64_t)guest_arg1; 
+  CGRect_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret), host_arg0, host_arg1);
+  // No post-process for guest_arg0 
+  // No post-process for guest_arg1 
+  return LC32GuestCGRect(host_ret);
+}
+
+- (char)drawsUnderline {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)setSemanticContentAttribute:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setLetterpressStyle:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)invalidateIntrinsicContentSize {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  // return void
+}
+
+- (void)setPreferredMaxLayoutWidth:(float)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  double host_arg0 = (double)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)isEnabled {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)drawTextInRect:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setCentersHorizontally:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (CGSize)textSize {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret));
+  return LC32GuestCGSize(host_ret);
+}
+
+- (id)text {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (void)encodeWithCoder:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)adjustsLetterSpacingToFitWidth {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (char)isHighlighted {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (id)color {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
++ (id)defaultFont {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (void)setMarqueeEnabled:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (int)textAlignment {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (int)host_ret;
+}
+
+- (void)layerWillDraw:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)traitCollectionDidChange:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)marqueeRunning {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)drawContentsInRect:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setHighlighted:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)highlightedTextColor {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (CGRect)textRectForBounds:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  CGRect_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret), host_arg0);
+  // No post-process for guest_arg0 
+  return LC32GuestCGRect(host_ret);
+}
+
+- (int)lineSpacing {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (int)host_ret;
+}
+
+- (void)setMinimumFontSize:(float)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  double host_arg0 = (double)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setLineSpacing:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setBaselineAdjustment:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setText:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)font {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (void)drawRect:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)attributedText {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (void)setEnabled:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)allowsDefaultTighteningForTruncation {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)setMarqueeRunning:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (CGSize)shadowOffset {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret));
+  return LC32GuestCGSize(host_ret);
+}
+
+- (int)lineBreakMode {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (int)host_ret;
+}
+
+- (void)setAdjustsLetterSpacingToFitWidth:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setAdjustsFontForContentSizeCategory:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (float)minimumFontSize {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (float)host_ret;
+}
+
+- (char)drawsLetterpress {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (id)textColor {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (char)marqueeEnabled {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (CGSize)intrinsicContentSize {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret));
+  return LC32GuestCGSize(host_ret);
+}
+
+- (void)setNumberOfLines:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setDrawsUnderline:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)initWithFrame:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  self.host_self = host_ret; return self;
+}
+
+- (void)setUserInteractionEnabled:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setAttributedText:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setShadowBlur:(float)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  double host_arg0 = (double)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setLineBreakMode:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setFont:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)letterpressStyle {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (char)centersHorizontally {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (float)shadowBlur {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (float)host_ret;
+}
+
+- (char)autotrackTextToFit {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)setShadowOffset:(CGSize)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGSize_64 host_arg0 = LC32HostCGSize(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setAdjustsFontSizeToFitWidth:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (id)initWithCoder:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  self.host_self = host_ret; return self;
+}
+
+- (void)setFrame:(CGRect)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  CGRect_64 host_arg0 = LC32HostCGRect(guest_arg0); 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setShadowColor:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)isAccessibilityElementByDefault {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (CGSize)rawSize {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)1 << 63;
+  CGSize_64 host_ret; LC32InvokeHostSelector(self.host_self, _host_cmd, &host_ret, sizeof(host_ret));
+  return LC32GuestCGSize(host_ret);
+}
+
+- (void)setTextColor:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setDrawsLetterpress:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)adjustsFontSizeToFitWidth {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (id)shadowColor {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (char)adjustsFontForContentSizeCategory {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (void)setAllowsDefaultTighteningForTruncation:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (char)isElementAccessibilityExposedToInterfaceBuilder {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (char)host_ret;
+}
+
+- (float)preferredMaxLayoutWidth {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (float)host_ret;
+}
+
+- (id)currentTextColor {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return LC32HostToGuestObject(host_ret);
+}
+
+- (void)setAutotrackTextToFit:(char)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setTextAlignment:(int)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = (uint64_t)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (void)setMinimumScaleFactor:(float)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  double host_arg0 = (double)guest_arg0; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+
+- (int)baselineAdjustment {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd);
+  return (int)host_ret;
+}
+
+- (void)setHighlightedTextColor:(id)guest_arg0 {
+  printf("DBG: call [%s %s]\n", class_getName(self.class), sel_getName(_cmd));
+  static uint64_t _host_cmd;
+  if(!_host_cmd) _host_cmd = LC32GetHostSelector(_cmd) | (uint64_t)0 << 63;
+  uint64_t host_arg0 = [guest_arg0 host_self]; 
+  uint64_t host_ret = LC32InvokeHostSelector(self.host_self, _host_cmd, host_arg0);
+  // No post-process for guest_arg0 
+  // return void
+}
+@end
