@@ -13,7 +13,9 @@ LiveExec32_FILES = \
   bridge.mm bridge.s log.m \
   HostFrameworks/Foundation/Foundation.mm \
   HostFrameworks/CoreGraphics/CoreGraphics.mm \
-  HostFrameworks/UIKit/UIKit.mm
+  HostFrameworks/UIKit/UIKit.mm \
+  HostFrameworks/LC32ProxyManager.mm
+
 LiveExec32_CFLAGS = -Iinclude -DDYNARMIC_MASTER -Wno-error
 LiveExec32_LDFLAGS = -Llib -ldynarmic
 LiveExec32_CODESIGN_FLAGS = -Sentitlements.plist

@@ -36,21 +36,18 @@ inline id LC32GetHostConstString(u32 guest_self) {
 }
 
 u64 LC32GetHostObject(u32 guest_self, u32 guest_className, bool returnClass) {
-    DynarmicHostString host_className(guest_className);
-    Class cls = objc_getClass(host_className.hostPtr);
-    if(returnClass) {
-        [(id)cls setGuest_self:guest_self];
+    if (returnClass) {
+        Class cls = [[LC32ProxyManager sharedManager] getHostClassForGuestClass:guest_className];
+        if (!cls) {
+            DynarmicHostString host_className(guest_className);
+            cls = objc_getClass(host_className.hostPtr);
+            [[LC32ProxyManager sharedManager] registerGuestClass:guest_className withHostClass:cls];
+        }
         return (u64)cls;
     }
 
-    id obj;
-    if(object_getClass(cls) == object_getClass((Class)__CFConstantStringClassReference)) {
-        obj = LC32GetHostConstString(guest_self);
-    } else {
-        obj = [cls alloc];
-    }
-    [obj setGuest_self:guest_self];
-    return (u64)obj;
+    id proxy = [[LC32ProxyManager sharedManager] createHostProxyForGuestObject:guest_self];
+    return (u64)proxy;
 }
 
 u64 LC32GetHostSelector(u32 guest_selector) {
@@ -60,8 +57,7 @@ u64 LC32GetHostSelector(u32 guest_selector) {
 
 // guest to host call of objc_msgSend*
 u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args) {
-    // ARMv7 stores parameters in r0-r3 and stack pointer. r0-r3 is already reserved for self and cmd, so we read the rest from stack pointer
-
+   
     u32 structPtr = 0, structLen;
     if(host_cmd & SEL_RETURN_STRUCT) {
         host_cmd &= ~SEL_RETURN_STRUCT;
@@ -70,52 +66,71 @@ u64 LC32InvokeHostSelector(u64 host_self, u64 host_cmd, u64 va_args) {
         va_args += sizeof(u32);
     }
 
-    // FIXME: how to read number of args for variadic methods and translate its values?
-    u64 args[9] = {
-        sharedHandle.ucb->MemoryRead64(va_args),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64)),
-        sharedHandle.ucb->MemoryRead64(va_args += sizeof(u64))
-    };
 
-    typedef u64(*objc_msgSendFunc)(u64 x0, u64 x1, u64 x2, u64 x3, u64 x4, u64 x5, u64 x6, u64 x7, ...);
-    // This is an alias of objc_msgSend_stret. For now we assume all structs return at most 4 double values. Anything else will be excluded by the shim generator
-    // TODO: check if we really need to call double setter-getter
-    typedef LC32_SixDoubles(*objc_msgSendStructFunc)(u64 x0, u64 x1, u64 x2, u64 x3, u64 x4, u64 x5, u64 x6, u64 x7, ...);
-
-    // If we're calling from guest within a guest subclass, call super
-    if([(id)object_getClass((id)host_self) isGuestClass]) {
-        Class superclass = [(id)host_self superclass];
-        while([(id)superclass isGuestClass]) {
-            superclass = [superclass superclass];
+    NSMutableArray *convertedArgs = [NSMutableArray array];
+    va_list args;
+    va_start(args, va_args);
+    
+    Method method = class_getInstanceMethod(object_getClass((id)host_self), (SEL)host_cmd);
+    const char *types = method_getTypeEncoding(method);
+    
+    types = NSGetSizeAndAlignment(types, NULL, NULL);
+    types = NSGetSizeAndAlignment(types, NULL, NULL);
+    
+    while (*types) {
+        char *next = NULL;
+        NSUInteger size;
+        NSGetSizeAndAlignment(types, &size, NULL);
+        
+        switch (*types) {
+            case '@': {
+                u32 guestObj = va_arg(args, u32);
+                id hostObj = [[LC32ProxyManager sharedManager] createHostProxyForGuestObject:guestObj];
+                [convertedArgs addObject:hostObj ?: [NSNull null]];
+                break;
+            }
+            case '#': {
+                u32 guestClass = va_arg(args, u32);
+                Class hostClass = [[LC32ProxyManager sharedManager] getHostClassForGuestClass:guestClass];
+                [convertedArgs addObject:hostClass ?: [NSNull null]];
+                break;
+            }
+            default: {
+                u64 value = va_arg(args, u64);
+                [convertedArgs addObject:@(value)];
+                break;
+            }
         }
-        struct objc_super superInfo = {
-            (id)host_self,
-            superclass
-        };
-        if(structPtr) {
-            LC32_SixDoubles doubleRegs = ((objc_msgSendStructFunc)objc_msgSendSuper)((u64)&superInfo, host_cmd, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
-            Dynarmic_mem_1write(structPtr, structLen, (char *)&doubleRegs);
-            return 0;
-        } else {
-            LC32SetDoubleRegisters(*(double*)&args[0], *(double*)&args[1], *(double*)&args[2], *(double*)&args[3], *(double*)&args[4], *(double*)&args[5]);
-            return ((objc_msgSendFunc)objc_msgSendSuper)((u64)&superInfo, host_cmd, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
-        }
-    } else {
-        if(structPtr) {
-            LC32_SixDoubles doubleRegs = ((objc_msgSendStructFunc)objc_msgSend)(host_self, host_cmd, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
-            Dynarmic_mem_1write(structPtr, structLen, (char *)&doubleRegs);
-            return 0;
-        } else {
-            LC32SetDoubleRegisters(*(double*)&args[0], *(double*)&args[1], *(double*)&args[2], *(double*)&args[3], *(double*)&args[4], *(double*)&args[5]);
-            return ((objc_msgSendFunc)objc_msgSend)(host_self, host_cmd, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
-        }
+        
+        types = NSGetSizeAndAlignment(types, NULL, NULL);
     }
+    va_end(args);
+
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:types];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setTarget:(id)host_self];
+    [inv setSelector:(SEL)host_cmd];
+    
+    for (NSUInteger i = 0; i < convertedArgs.count; i++) {
+        id arg = convertedArgs[i];
+        [inv setArgument:&arg atIndex:i + 2];
+    }
+    
+    [inv invoke];
+    
+    if (sig.methodReturnLength > 0) {
+        void *buffer = alloca(sig.methodReturnLength);
+        [inv getReturnValue:buffer];
+        
+        if (*sig.methodReturnType == '@') {
+            id returnObj = *(id *)buffer;
+            return (u64)[[LC32ProxyManager sharedManager] createGuestProxyForHostObject:returnObj];
+        }
+        
+        return *(u64 *)buffer;
+    }
+    
+    return 0;
 }
 
 void LC32SetInvokeGuestFuncPtr(u32 dlsymFunc, u32 invokeFunc) {
